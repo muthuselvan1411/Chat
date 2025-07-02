@@ -19,9 +19,7 @@ UPLOAD_DIR.mkdir(exist_ok=True)
 # Create Socket.IO server with proper configuration
 sio = socketio.AsyncServer(
     async_mode="asgi",
-    cors_allowed_origins=[],
-    logger=False,
-    engineio_logger=False
+    cors_allowed_origins="*",
 )
 
 # Create FastAPI app
@@ -73,6 +71,7 @@ stranger_chat = StrangerChat()
 
 # Create Socket.IO ASGI app
 socket_app = socketio.ASGIApp(sio, other_asgi_app=app)
+app = socket_app 
 
 def generate_anonymous_username():
     """Generate random anonymous usernames for stranger chat"""
