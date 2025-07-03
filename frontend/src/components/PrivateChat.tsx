@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Phone, Video, MoreVertical, MessageCircle, Send, Smile, Paperclip, Search, Info } from 'lucide-react';
+import { ArrowLeft, Video, MessageCircle, Send, Paperclip } from 'lucide-react';
 import { User, Message } from '../types';
 import { useSocket } from '../hooks/useSocket';
+import { useTheme } from '../contexts/ThemeContext';
+import VideoCall from './VideoCall';
 
 interface PrivateChatProps {
   user: User;
@@ -21,11 +23,21 @@ const PrivateChat: React.FC<PrivateChatProps> = ({
   onBack
 }) => {
   const { socket } = useSocket('http://localhost:8000');
+  const { isDarkMode } = useTheme();
+  
+  // Chat states
   const [isPartnerTyping, setIsPartnerTyping] = useState(false);
   const [typingTimeout, setTypingTimeout] = useState<NodeJS.Timeout | null>(null);
   const [message, setMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [replyingTo, setReplyingTo] = useState<any>(null);
+  
+  // Video call states
+  const [inVideoCall, setInVideoCall] = useState(false);
+  const [incomingCall, setIncomingCall] = useState<any>(null);
+  const [videoCallRoom, setVideoCallRoom] = useState<string | null>(null);
+  const [videoCallInitiator, setVideoCallInitiator] = useState<string | null>(null);
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -35,7 +47,7 @@ const PrivateChat: React.FC<PrivateChatProps> = ({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isPartnerTyping]);
 
-  // Listen for typing indicators
+  // Enhanced typing and video call listeners
   useEffect(() => {
     if (!socket) return;
 
@@ -58,42 +70,126 @@ const PrivateChat: React.FC<PrivateChatProps> = ({
       }
     };
 
+    // Video call event handlers
+    const handleIncomingPrivateVideoCall = (data: any) => {
+      console.log('📞 Incoming private video call:', data);
+      setIncomingCall(data);
+    };
+
+    const handlePrivateVideoCallInitiated = (data: any) => {
+      console.log('📞 Private video call initiated:', data);
+      setVideoCallRoom(data.room_id);
+      setVideoCallInitiator(data.initiator);
+    };
+
+    const handlePrivateVideoCallAccepted = (data: any) => {
+      console.log('✅ Private video call accepted:', data);
+      setInVideoCall(true);
+      setIncomingCall(null);
+      setVideoCallRoom(data.room_id);
+      setVideoCallInitiator(data.initiator);
+    };
+
+    const handlePrivateVideoCallRejected = () => {
+      console.log('❌ Private video call rejected');
+      setIncomingCall(null);
+      setVideoCallRoom(null);
+      setVideoCallInitiator(null);
+    };
+
+    const handlePrivateVideoCallEnded = () => {
+      console.log('📞 Private video call ended');
+      setInVideoCall(false);
+      setIncomingCall(null);
+      setVideoCallRoom(null);
+      setVideoCallInitiator(null);
+    };
+
     socket.on('user_typing', handleUserTyping);
+    socket.on('incoming_private_video_call', handleIncomingPrivateVideoCall);
+    socket.on('private_video_call_initiated', handlePrivateVideoCallInitiated);
+    socket.on('private_video_call_accepted', handlePrivateVideoCallAccepted);
+    socket.on('private_video_call_rejected', handlePrivateVideoCallRejected);
+    socket.on('private_video_call_ended', handlePrivateVideoCallEnded);
 
     return () => {
       socket.off('user_typing', handleUserTyping);
+      socket.off('incoming_private_video_call', handleIncomingPrivateVideoCall);
+      socket.off('private_video_call_initiated', handlePrivateVideoCallInitiated);
+      socket.off('private_video_call_accepted', handlePrivateVideoCallAccepted);
+      socket.off('private_video_call_rejected', handlePrivateVideoCallRejected);
+      socket.off('private_video_call_ended', handlePrivateVideoCallEnded);
       if (typingTimeout) clearTimeout(typingTimeout);
     };
   }, [socket, user.id, typingTimeout]);
 
-  // Handle input change with typing detection
+  // Video call functions
+  const startVideoCall = () => {
+    if (!socket) return;
+    console.log('📞 Starting private video call with:', user.id);
+    socket.emit('start_private_video_call', {
+      target_user_id: user.id
+    });
+  };
+
+  const acceptVideoCall = (roomId: string) => {
+    if (!socket) return;
+    console.log('✅ Accepting private video call');
+    socket.emit('accept_private_video_call', { room_id: roomId });
+  };
+
+  const rejectVideoCall = (roomId: string) => {
+    if (!socket) return;
+    console.log('❌ Rejecting private video call');
+    socket.emit('reject_private_video_call', { room_id: roomId });
+  };
+
+  const endVideoCall = () => {
+    if (!socket || !videoCallRoom) return;
+    console.log('📞 Ending private video call');
+    socket.emit('end_private_video_call', { room_id: videoCallRoom });
+  };
+
+  const isVideoCallInitiator = () => {
+    return videoCallInitiator === socket?.id;
+  };
+
+  // If in video call, show video component
+  if (inVideoCall && videoCallRoom) {
+    return (
+      <VideoCall
+        roomId={videoCallRoom}
+        isInitiator={isVideoCallInitiator()}
+        onEndCall={endVideoCall}
+        onBack={onBack}
+        partnerName={user.username}
+        socket={socket}
+      />
+    );
+  }
+
+  // Message handling functions
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setMessage(value);
 
-    // Start typing indicator
     if (value.trim() && !isTyping) {
       setIsTyping(true);
       onTyping(true);
-      console.log('👀 Started typing in private chat');
     }
 
-    // Clear existing timeout
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
     }
 
-    // Set new timeout to stop typing indicator
     typingTimeoutRef.current = setTimeout(() => {
       if (isTyping) {
         setIsTyping(false);
         onTyping(false);
-        console.log('👀 Stopped typing in private chat (timeout)');
       }
     }, 1000);
   };
 
-  // Handle message send
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
     if (message.trim()) {
@@ -105,11 +201,9 @@ const PrivateChat: React.FC<PrivateChatProps> = ({
       }
       setMessage('');
       
-      // Stop typing indicator immediately
       if (isTyping) {
         setIsTyping(false);
         onTyping(false);
-        console.log('👀 Stopped typing (message sent)');
       }
       
       if (typingTimeoutRef.current) {
@@ -118,18 +212,11 @@ const PrivateChat: React.FC<PrivateChatProps> = ({
     }
   };
 
-  // Handle reactions
-  const handleReaction = (messageId: string, emoji: string) => {
-    console.log('Adding reaction:', emoji, 'to message:', messageId);
-  };
-
-  // Handle reply
   const handleReply = (message: Message) => {
     setReplyingTo(message);
     inputRef.current?.focus();
   };
 
-  // Format time
   const formatTime = (timestamp: string) => {
     return new Date(timestamp).toLocaleTimeString('en-US', {
       hour: '2-digit',
@@ -138,83 +225,103 @@ const PrivateChat: React.FC<PrivateChatProps> = ({
   };
 
   return (
-    <div className="w-full h-screen flex flex-col bg-gray-900"> {/* Fixed: Added w-full */}
-      {/* Enhanced Header */}
-      <div className="w-full bg-gray-800 border-b border-gray-700 px-4 py-3 flex-shrink-0">
+    <div className={`w-full h-screen flex flex-col transition-colors duration-300 ${
+      isDarkMode ? 'bg-gray-900' : 'bg-gray-50'
+    }`}>
+      {/* Professional Header */}
+      <div className={`w-full border-b px-6 py-4 flex-shrink-0 transition-colors duration-300 ${
+        isDarkMode 
+          ? 'bg-gray-800 border-gray-700' 
+          : 'bg-white border-gray-200'
+      }`}>
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
             <button
               onClick={onBack}
-              className="p-2 rounded-full bg-gray-700 hover:bg-gray-600 transition-colors duration-200"
+              className={`p-2 rounded-xl transition-all duration-200 hover:scale-105 ${
+                isDarkMode 
+                  ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' 
+                  : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
+              }`}
               title="Back to main chat"
             >
-              <ArrowLeft className="w-5 h-5 text-gray-300" />
+              <ArrowLeft className="w-5 h-5" />
             </button>
             
-            <div className="relative">
-              <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center">
-                <span className="text-white font-bold text-sm">
-                  {user.username.charAt(0).toUpperCase()}
-                </span>
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <div className="user-avatar w-12 h-12">
+                  <span className="text-white font-bold">
+                    {user.username.charAt(0).toUpperCase()}
+                  </span>
+                </div>
+                <div className={`status-indicator absolute -bottom-0.5 -right-0.5 ${
+                  user.isOnline ? 'status-online' : 'status-offline'
+                }`} />
               </div>
-              <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-gray-800 ${
-                user.isOnline ? 'bg-green-500' : 'bg-gray-400'
-              }`} />
-            </div>
-            
-            <div className="flex-1">
-              <h1 className="text-lg font-semibold text-white">
-                {user.username}
-              </h1>
-              <div className="flex items-center gap-2 text-sm">
-                {isPartnerTyping ? (
-                  <div className="flex items-center gap-2 text-blue-400">
-                    <div className="typing-dots">
-                      <span></span>
-                      <span></span>
-                      <span></span>
+              
+              <div className="flex-1 min-w-0">
+                <h1 className={`text-lg font-semibold transition-colors duration-300 ${
+                  isDarkMode ? 'text-white' : 'text-gray-900'
+                }`}>
+                  {user.username}
+                </h1>
+                
+                {/* Enhanced Typing Indicator - Positioned below avatar */}
+                <div className="flex items-center gap-2 text-sm min-h-5">
+                  {isPartnerTyping ? (
+                    <div className="flex items-center gap-2 text-blue-500 animate-fade-in">
+                      <div className="typing-dots">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                      </div>
+                      <span className="font-medium">typing...</span>
                     </div>
-                    <span>typing...</span>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2 text-gray-400">
-                    <span className={`w-2 h-2 rounded-full ${user.isOnline ? 'bg-green-500' : 'bg-gray-400'}`} />
-                    {user.isOnline ? 'Online' : 'Offline'} • Private Chat
-                  </div>
-                )}
+                  ) : (
+                    <div className={`flex items-center gap-2 transition-colors duration-300 ${
+                      isDarkMode ? 'text-gray-400' : 'text-gray-500'
+                    }`}>
+                      <span className={`w-2 h-2 rounded-full ${
+                        user.isOnline ? 'bg-green-500' : 'bg-gray-400'
+                      }`} />
+                      <span>{user.isOnline ? 'Online' : 'Offline'} • Private Chat</span>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
           
+          {/* Action Buttons */}
           <div className="flex items-center gap-2">
-            <button className="p-2 rounded-full bg-gray-700 hover:bg-gray-600 transition-colors duration-200">
-              <Search className="w-4 h-4 text-gray-300" />
-            </button>
-            <button className="p-2 rounded-full bg-green-600 hover:bg-green-700 transition-colors duration-200">
-              <Phone className="w-4 h-4 text-white" />
-            </button>
-            <button className="p-2 rounded-full bg-blue-600 hover:bg-blue-700 transition-colors duration-200">
-              <Video className="w-4 h-4 text-white" />
-            </button>
-            <button className="p-2 rounded-full bg-gray-700 hover:bg-gray-600 transition-colors duration-200">
-              <Info className="w-4 h-4 text-gray-300" />
+            <button 
+              onClick={startVideoCall}
+              className="floating-button"
+              title="Start video call"
+            >
+              <Video className="w-5 h-5" />
             </button>
           </div>
         </div>
       </div>
 
-      {/* Messages Area - Fixed scrolling */}
-      <div className="flex-1 w-full overflow-y-auto px-4 py-4 space-y-4">
+      {/* Messages Area */}
+      <div className="message-list">
         {messages.length === 0 ? (
           <div className="flex-1 flex items-center justify-center min-h-[400px]">
-            <div className="text-center max-w-sm">
-              <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center mx-auto mb-4">
-                <MessageCircle className="w-8 h-8 text-white" />
+            <div className="text-center max-w-sm animate-fade-in-up">
+              <div className="user-avatar w-20 h-20 mx-auto mb-6">
+                <MessageCircle className="w-10 h-10 text-white" />
               </div>
-              <h3 className="text-xl font-semibold text-white mb-2">
+              <h3 className={`text-xl font-semibold mb-3 transition-colors duration-300 ${
+                isDarkMode ? 'text-white' : 'text-gray-900'
+              }`}>
                 Start a conversation
               </h3>
-              <p className="text-gray-400">
+              <p className={`transition-colors duration-300 ${
+                isDarkMode ? 'text-gray-400' : 'text-gray-600'
+              }`}>
                 Send a message to {user.username} to get started
               </p>
             </div>
@@ -228,20 +335,20 @@ const PrivateChat: React.FC<PrivateChatProps> = ({
               return (
                 <div
                   key={message.id || index}
-                  className={`flex ${isOwn ? 'justify-end' : 'justify-start'} mb-4 group w-full`}
+                  className={`flex ${isOwn ? 'justify-end' : 'justify-start'} mb-4 group w-full animate-fade-in`}
                 >
-                  <div className={`flex items-end gap-2 max-w-[85%] ${isOwn ? 'flex-row-reverse' : 'flex-row'}`}>
+                  <div className={`flex items-end gap-3 max-w-[85%] ${isOwn ? 'flex-row-reverse' : 'flex-row'}`}>
                     {/* Avatar for other user */}
                     {!isOwn && (
-                      <div className="flex-shrink-0 w-8 h-8">
+                      <div className="flex-shrink-0 w-10 h-10">
                         {showAvatar ? (
-                          <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center">
-                            <span className="text-white font-semibold text-xs">
+                          <div className="user-avatar w-10 h-10">
+                            <span className="text-white font-semibold text-sm">
                               {user.username.charAt(0).toUpperCase()}
                             </span>
                           </div>
                         ) : (
-                          <div className="w-8 h-8" />
+                          <div className="w-10 h-10" />
                         )}
                       </div>
                     )}
@@ -249,56 +356,35 @@ const PrivateChat: React.FC<PrivateChatProps> = ({
                     <div className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} relative`}>
                       {/* Username for first message */}
                       {!isOwn && showAvatar && (
-                        <span className="text-xs text-gray-400 mb-1 px-3">
+                        <span className={`text-xs mb-2 px-3 transition-colors duration-300 ${
+                          isDarkMode ? 'text-gray-400' : 'text-gray-500'
+                        }`}>
                           {user.username}
                         </span>
                       )}
 
                       {/* Message Bubble */}
-                      <div
-                        className={`px-4 py-2 rounded-2xl max-w-full break-words relative ${
-                          isOwn
-                            ? 'bg-blue-600 text-white rounded-br-md'
-                            : 'bg-gray-700 text-white rounded-bl-md'
-                        }`}
-                      >
-                        <div className="text-sm">{message.content}</div>
+                      <div className={`message-bubble ${isOwn ? 'message-own' : 'message-other'}`}>
+                        <div className="text-sm leading-relaxed">{message.content}</div>
                         
                         {/* Timestamp */}
-                        <div className={`text-xs mt-1 ${
+                        <div className={`text-xs mt-2 ${
                           isOwn 
-                            ? 'text-blue-200' 
-                            : 'text-gray-400'
+                            ? 'text-white/70' 
+                            : isDarkMode ? 'text-gray-400' : 'text-gray-500'
                         }`}>
                           {formatTime(message.timestamp)}
                         </div>
 
                         {/* Quick Actions on Hover */}
-                        <div className={`absolute top-0 ${isOwn ? 'left-0' : 'right-0'} transform ${isOwn ? '-translate-x-full' : 'translate-x-full'} flex items-center gap-1 bg-gray-800 border border-gray-600 rounded-lg shadow-lg p-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10`}>
-                          <button
-                            onClick={() => handleReaction(message.id, '❤️')}
-                            className="p-1 hover:bg-gray-700 rounded text-sm"
-                            title="Love"
-                          >
-                            ❤️
-                          </button>
-                          <button
-                            onClick={() => handleReaction(message.id, '👍')}
-                            className="p-1 hover:bg-gray-700 rounded text-sm"
-                            title="Like"
-                          >
-                            👍
-                          </button>
-                          <button
-                            onClick={() => handleReaction(message.id, '😂')}
-                            className="p-1 hover:bg-gray-700 rounded text-sm"
-                            title="Laugh"
-                          >
-                            😂
-                          </button>
+                        <div className={`absolute top-0 ${isOwn ? 'left-0' : 'right-0'} transform ${
+                          isOwn ? '-translate-x-full' : 'translate-x-full'
+                        } flex items-center gap-1 glass-effect rounded-lg shadow-lg p-1 opacity-0 group-hover:opacity-100 transition-all duration-200 z-10`}>
                           <button
                             onClick={() => handleReply(message)}
-                            className="p-1 hover:bg-gray-700 rounded"
+                            className={`p-1 rounded transition-colors duration-200 ${
+                              isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
+                            }`}
                             title="Reply"
                           >
                             <MessageCircle className="w-3 h-3" />
@@ -310,26 +396,6 @@ const PrivateChat: React.FC<PrivateChatProps> = ({
                 </div>
               );
             })}
-
-            {/* Typing Indicator */}
-            {isPartnerTyping && (
-              <div className="flex justify-start mb-4 animate-fade-in">
-                <div className="flex items-end gap-2 max-w-[80%]">
-                  <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center">
-                    <span className="text-white font-semibold text-xs">
-                      {user.username.charAt(0).toUpperCase()}
-                    </span>
-                  </div>
-                  <div className="bg-gray-700 px-4 py-3 rounded-2xl rounded-bl-md">
-                    <div className="typing-indicator">
-                      <span></span>
-                      <span></span>
-                      <span></span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
           </>
         )}
         
@@ -338,32 +404,62 @@ const PrivateChat: React.FC<PrivateChatProps> = ({
 
       {/* Reply Preview */}
       {replyingTo && (
-        <div className="w-full bg-gray-800 border-t border-gray-700 px-4 py-2 flex-shrink-0">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-sm">
-              <MessageCircle className="w-4 h-4 text-blue-400" />
-              <span className="text-gray-400">Replying to</span>
-              <span className="text-white font-medium">{replyingTo.username}</span>
+        <div className={`w-full border-t px-6 py-3 flex-shrink-0 transition-colors duration-300 ${
+          isDarkMode 
+            ? 'bg-gray-800 border-gray-700' 
+            : 'bg-gray-50 border-gray-200'
+        }`}>
+          <div className="glass-effect rounded-xl p-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2 text-sm">
+                <MessageCircle className="w-4 h-4 text-blue-500" />
+                <span className={`transition-colors duration-300 ${
+                  isDarkMode ? 'text-gray-400' : 'text-gray-600'
+                }`}>
+                  Replying to
+                </span>
+                <span className={`font-medium transition-colors duration-300 ${
+                  isDarkMode ? 'text-white' : 'text-gray-900'
+                }`}>
+                  {replyingTo.username}
+                </span>
+              </div>
+              <button
+                onClick={() => setReplyingTo(null)}
+                className={`text-lg leading-none transition-colors duration-200 ${
+                  isDarkMode 
+                    ? 'text-gray-400 hover:text-white' 
+                    : 'text-gray-500 hover:text-gray-900'
+                }`}
+              >
+                ×
+              </button>
             </div>
-            <button
-              onClick={() => setReplyingTo(null)}
-              className="text-gray-400 hover:text-white"
-            >
-              ×
-            </button>
+            <p className={`text-sm truncate transition-colors duration-300 ${
+              isDarkMode ? 'text-gray-300' : 'text-gray-700'
+            }`}>
+              {replyingTo.content}
+            </p>
           </div>
-          <p className="text-sm text-gray-300 truncate mt-1">{replyingTo.content}</p>
         </div>
       )}
 
       {/* Enhanced Message Input */}
-      <div className="w-full bg-gray-800 border-t border-gray-700 px-4 py-3 flex-shrink-0">
+      <div className={`w-full border-t px-6 py-4 flex-shrink-0 transition-colors duration-300 ${
+        isDarkMode 
+          ? 'bg-gray-800 border-gray-700' 
+          : 'bg-white border-gray-200'
+      }`}>
         <form onSubmit={handleSendMessage} className="flex items-center gap-3">
           <button
             type="button"
-            className="p-2 rounded-full bg-gray-700 hover:bg-gray-600 transition-colors duration-200 flex-shrink-0"
+            className={`p-3 rounded-xl transition-all duration-200 hover:scale-105 ${
+              isDarkMode 
+                ? 'bg-gray-700 hover:bg-gray-600 text-gray-300' 
+                : 'bg-gray-100 hover:bg-gray-200 text-gray-600'
+            }`}
           >
-            <Paperclip className="w-5 h-5 text-gray-300" />
+            <Paperclip className="w-5 h-5" />
           </button>
           
           <div className="flex-1 relative">
@@ -373,27 +469,61 @@ const PrivateChat: React.FC<PrivateChatProps> = ({
               value={message}
               onChange={handleInputChange}
               placeholder={replyingTo ? `Reply to ${replyingTo.username}...` : `Message ${user.username}...`}
-              className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-full focus:ring-2 focus:ring-blue-500 focus:border-transparent text-white placeholder-gray-400 transition-all duration-200"
+              className="chat-input"
               maxLength={500}
               autoComplete="off"
             />
-            <button
-              type="button"
-              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-blue-400 transition-colors duration-200"
-            >
-              <Smile className="w-4 h-4" />
-            </button>
           </div>
           
           <button
             type="submit"
             disabled={!message.trim()}
-            className="p-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex-shrink-0"
+            className="btn-primary"
           >
             <Send className="w-5 h-5" />
           </button>
         </form>
       </div>
+
+      {/* Professional Incoming Call Modal */}
+      {incomingCall && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in">
+          <div className="glass-effect-strong rounded-2xl p-8 max-w-sm w-full mx-4 shadow-2xl animate-fade-in-up">
+            <div className="text-center">
+              <div className="w-20 h-20 bg-gradient-to-br from-green-500 to-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-6 animate-float shadow-xl">
+                <Video className="w-10 h-10 text-white" />
+              </div>
+              
+              <h3 className={`text-xl font-bold mb-2 transition-colors duration-300 ${
+                isDarkMode ? 'text-white' : 'text-gray-900'
+              }`}>
+                Incoming Video Call
+              </h3>
+              
+              <p className={`mb-8 transition-colors duration-300 ${
+                isDarkMode ? 'text-gray-300' : 'text-gray-600'
+              }`}>
+                <span className="font-medium">{incomingCall.caller_username}</span> wants to start a video call
+              </p>
+              
+              <div className="flex gap-4">
+                <button
+                  onClick={() => rejectVideoCall(incomingCall.room_id)}
+                  className="flex-1 bg-gradient-to-r from-red-500 to-red-600 text-white py-3 px-6 rounded-xl hover:from-red-600 hover:to-red-700 transition-all duration-200 transform hover:scale-105 font-semibold shadow-lg"
+                >
+                  Decline
+                </button>
+                <button
+                  onClick={() => acceptVideoCall(incomingCall.room_id)}
+                  className="flex-1 bg-gradient-to-r from-green-500 to-green-600 text-white py-3 px-6 rounded-xl hover:from-green-600 hover:to-green-700 transition-all duration-200 transform hover:scale-105 font-semibold shadow-lg"
+                >
+                  Accept
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

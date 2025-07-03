@@ -16,24 +16,31 @@ from typing import Dict, List, Optional
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-# Create Socket.IO server with proper configuration
+# Create Socket.IO server with proper configuration for localhost
 sio = socketio.AsyncServer(
     async_mode="asgi",
-    cors_allowed_origins="*",
+    cors_allowed_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://localhost:3000",
+        "http://192.168.1.7:3000"
+    ],
+    logger=False,
+    engineio_logger=False
 )
 
 # Create FastAPI app
 app = FastAPI(title="Multi-Feature Chat API")
-origins = [
-    "http://localhost:3000",
-    "https://*.vercel.app",  # Allow all Vercel subdomains
-    "*"  # Remove this after deployment
-]
 
-# Add CORS middleware
+# CORS configuration for localhost development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://localhost:3000",
+        "http://192.168.1.7:3000"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -71,7 +78,6 @@ stranger_chat = StrangerChat()
 
 # Create Socket.IO ASGI app
 socket_app = socketio.ASGIApp(sio, other_asgi_app=app)
-app = socket_app 
 
 def generate_anonymous_username():
     """Generate random anonymous usernames for stranger chat"""
@@ -256,10 +262,9 @@ async def join_room(sid, data):
     }, room=room, skip_sid=sid)
     
     await update_room_users(room)
-
 @sio.event
 async def send_message(sid, data):
-    print(f"📨 Received public message from {sid}: {data}")
+    print(f"📨 Received message from {sid}: {data}")
     
     if sid not in active_users:
         await sio.emit('error', {'message': 'User not found'}, room=sid)
@@ -273,14 +278,17 @@ async def send_message(sid, data):
         await sio.emit('error', {'message': 'You must join a room first'}, room=sid)
         return
     
-    message_content = data.get('message') or data.get('content') or data.get('text')
+    message_content = data.get('message') or data.get('content') or data.get('text', '')
+    file_info = data.get('fileInfo') or data.get('file')  # Get file info
     
-    if not message_content or not message_content.strip():
-        return
+    print(f"📎 File info received: {file_info}")  # Debug log
+    
+    # Determine message type based on file info
+    message_type = 'file' if file_info else 'message'
     
     message_data = {
-        'type': 'message',
-        'content': message_content.strip(),
+        'type': message_type,
+        'content': message_content.strip() if message_content else '',
         'username': username,
         'room': room,
         'timestamp': datetime.now().isoformat(),
@@ -288,8 +296,15 @@ async def send_message(sid, data):
         'userId': sid
     }
     
+    # Add file info if present
+    if file_info:
+        message_data['file'] = file_info
+        print(f"📎 Voice message detected: {file_info.get('filename', 'unknown')} (type: {file_info.get('file_type', 'unknown')})")
+    
+    print(f"📤 Sending message data: {message_data}")  # Debug log
     await sio.emit('message', message_data, room=room)
-    print(f"✅ Public message sent to room {room}")
+    print(f"✅ Message sent to room {room}")
+
 
 @sio.event
 async def private_message(sid, data):
@@ -342,55 +357,190 @@ async def private_message(sid, data):
     except Exception as e:
         print(f"🚨 Error sending private message: {e}")
         await sio.emit('error', {'message': f'Failed to send message: {str(e)}'}, room=sid)
-# Add health check endpoint
-@app.get("/")
-async def root():
-    return {"message": "Chat API is running!"}
+# ============= PRIVATE VIDEO CHAT EVENTS =============
 
-@app.get("/health")
-async def health_check():
-    return {"status": "healthy"}
+@sio.event
+async def start_private_video_call(sid, data):
+    """Initiate video call with a specific user in private chat"""
+    print(f"📞 Starting private video call from {sid}")
+    
+    target_user_id = data.get('target_user_id')
+
+    print(f"🔍 Target user ID: {target_user_id}")
+    print(f"🔍 Active users: {list(active_users.keys())}")
+    print(f"🔍 Caller in active_users: {sid in active_users}")
+    print(f"🔍 Target in active_users: {target_user_id in active_users}")
+    
+    if not target_user_id:
+        await sio.emit('error', {'message': 'Target user ID required'}, room=sid)
+        return
+    
+    # Check if both users are online
+    if sid not in active_users or target_user_id not in active_users:
+        await sio.emit('error', {'message': 'User not found or offline'}, room=sid)
+        return
+    
+    # Create video call room ID
+    room_id = f"private_call_{min(sid, target_user_id)}_{max(sid, target_user_id)}"
+    
+    print(f"📞 Creating private video call session for room: {room_id}")
+    
+    # Store video call session
+    stranger_chat.video_calls[room_id] = {
+        'initiator': sid,
+        'partner': target_user_id,
+        'status': 'calling',
+        'type': 'private',  # Distinguish from stranger calls
+        'created_at': datetime.now().isoformat()
+    }
+    # Get usernames for notification
+    caller_username = active_users[sid].get('username', 'Unknown')
+    target_username = active_users[target_user_id].get('username', 'Unknown')
+    
+    print(f"📞 Notifying {target_username} ({target_user_id}) about call from {caller_username} ({sid})")
+    # Notify target user about incoming video call
+    await sio.emit('incoming_private_video_call', {
+        'caller_id': sid,
+        'caller_username': active_users[sid].get('username', 'Unknown'),
+        'room_id': room_id
+    }, room=target_user_id)
+    
+    # Notify caller that call was initiated
+    await sio.emit('private_video_call_initiated', {
+        'room_id': room_id,
+        'partner_id': target_user_id,
+        'partner_username': active_users[target_user_id].get('username', 'Unknown'),
+        'initiator': sid
+    }, room=sid)
+    
+    print(f"✅ Private video call initiated successfully")
+
+@sio.event
+async def accept_private_video_call(sid, data):
+    """Accept incoming private video call"""
+    room_id = data.get('room_id')
+    print(f"✅ Private video call accepted by {sid} for room {room_id}")
+    
+    if room_id in stranger_chat.video_calls:
+        call_info = stranger_chat.video_calls[room_id]
+        call_info['status'] = 'active'
+        
+        # Notify both users that call is accepted
+        await sio.emit('private_video_call_accepted', {
+            'room_id': room_id,
+            'initiator': call_info['initiator'],
+            'partner': sid
+        }, room=call_info['initiator'])
+        
+        await sio.emit('private_video_call_accepted', {
+            'room_id': room_id,
+            'initiator': call_info['initiator'],
+            'partner': sid
+        }, room=sid)
+        
+        print(f"✅ Private video call active in room {room_id}")
+
+@sio.event
+async def reject_private_video_call(sid, data):
+    """Reject incoming private video call"""
+    room_id = data.get('room_id')
+    print(f"❌ Private video call rejected by {sid} for room {room_id}")
+    
+    if room_id in stranger_chat.video_calls:
+        initiator_id = stranger_chat.video_calls[room_id]['initiator']
+        
+        # Remove call session
+        del stranger_chat.video_calls[room_id]
+        
+        # Notify initiator
+        await sio.emit('private_video_call_rejected', {
+            'message': 'Video call was rejected'
+        }, room=initiator_id)
+
+@sio.event
+async def end_private_video_call(sid, data):
+    """End current private video call"""
+    room_id = data.get('room_id')
+    print(f"📞 Ending private video call by {sid} for room {room_id}")
+    
+    if room_id in stranger_chat.video_calls:
+        call_info = stranger_chat.video_calls[room_id]
+        
+        # Remove call session
+        del stranger_chat.video_calls[room_id]
+        
+        # Notify both users
+        await sio.emit('private_video_call_ended', {
+            'message': 'Video call ended'
+        }, room=call_info['initiator'])
+        
+        await sio.emit('private_video_call_ended', {
+            'message': 'Video call ended'
+        }, room=call_info['partner'])
+
+# The existing webrtc_offer, webrtc_answer, and webrtc_ice_candidate events 
+# can be reused as they work for any peer-to-peer connection
+
 
 # File upload endpoint
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
     try:
-        if file.size > 10 * 1024 * 1024:
+        print(f"📁 Received file upload: {file.filename}, type: {file.content_type}, size: {file.size}")
+        
+        if file.size > 10 * 1024 * 1024:  # 10MB limit
             raise HTTPException(status_code=413, detail="File too large. Maximum size is 10MB.")
         
+        # Enhanced allowed types including voice messages
         allowed_types = {
+            # Images
             'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+            # Documents
             'application/pdf', 'text/plain', 
             'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            'audio/mpeg', 'audio/wav', 'audio/ogg'
+            # Audio files (including voice messages)
+            'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4', 'audio/aac',
+            'audio/webm', 'audio/webm;codecs=opus'  # Voice message formats
         }
         
+        # Check file type
         if file.content_type not in allowed_types:
-            raise HTTPException(status_code=400, detail="File type not allowed.")
+            print(f"❌ File type not allowed: {file.content_type}")
+            raise HTTPException(status_code=400, detail=f"File type '{file.content_type}' not allowed.")
         
-        file_extension = Path(file.filename).suffix
+        # Generate unique filename
+        file_extension = Path(file.filename).suffix if file.filename else '.webm'
         unique_filename = f"{uuid.uuid4()}{file_extension}"
         file_path = UPLOAD_DIR / unique_filename
         
+        # Read and save file
         content = await file.read()
         with open(file_path, "wb") as f:
             f.write(content)
         
+        # Determine file type for frontend
+        file_type = "voice" if file.content_type.startswith("audio/") else "file"
+        
         file_info = {
             "id": str(uuid.uuid4()),
-            "filename": file.filename,
+            "filename": file.filename or unique_filename,
             "unique_filename": unique_filename,
             "url": f"/uploads/{unique_filename}",
             "size": len(content),
             "type": file.content_type,
+            "file_type": file_type,  # Add this for frontend handling
             "uploaded_at": datetime.now().isoformat()
         }
         
+        print(f"✅ File uploaded successfully: {unique_filename}")
         return file_info
         
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"Upload error: {e}")
-        raise HTTPException(status_code=500, detail="Upload failed")
+        print(f"❌ Upload error: {e}")
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
 
 @sio.event
 async def send_file_message(sid, data):
@@ -1114,6 +1264,36 @@ async def ping(sid, data):
 
 # ============= API ENDPOINTS =============
 
+@app.get("/")
+async def root():
+    return {
+        "message": "Multi-Feature Chat API - Localhost Development",
+        "status": "running",
+        "environment": "localhost",
+        "features": [
+            "Regular chat rooms",
+            "Private messaging", 
+            "File sharing",
+            "Message reactions",
+            "Message replies",
+            "Random stranger matching",
+            "Peer-to-peer video chat with WebRTC",
+            "Interest-based matching",
+            "Anonymous usernames"
+        ]
+    }
+
+@app.get("/health")
+async def health():
+    return {
+        "status": "healthy",
+        "environment": "localhost",
+        "total_connections": len(active_users) + len(stranger_chat.stranger_users),
+        "regular_chat_active": len(active_users),
+        "stranger_chat_active": len(stranger_chat.stranger_users),
+        "timestamp": datetime.now().isoformat()
+    }
+
 @app.get("/debug/connections")
 async def debug_connections():
     return {
@@ -1147,27 +1327,10 @@ async def debug_user(user_id: str):
         ]
     }
 
-@app.get("/")
-async def root():
-    return {
-        "message": "Multi-Feature Chat API",
-        "status": "running",
-        "features": [
-            "Regular chat rooms",
-            "Private messaging", 
-            "File sharing",
-            "Message reactions",
-            "Message replies",
-            "Random stranger matching",
-            "Peer-to-peer video chat with WebRTC",
-            "Interest-based matching",
-            "Anonymous usernames"
-        ]
-    }
-
 @app.get("/debug")
 async def debug():
     return {
+        "environment": "localhost",
         "regular_chat": {
             "active_users": len(active_users),
             "room_users": {k: len(v) for k, v in room_users.items()},
@@ -1185,17 +1348,10 @@ async def debug():
         }
     }
 
-@app.get("/debug/video_calls")
-async def debug_video_calls():
-    return {
-        "active_video_calls": stranger_chat.video_calls,
-        "stranger_connections": stranger_chat.stranger_connections,
-        "stranger_users": {k: v for k, v in stranger_chat.stranger_users.items()}
-    }
-
 @app.get("/stats")
 async def get_stats():
     return {
+        "environment": "localhost",
         "regular_chat": {
             "total_users": len(active_users),
             "active_rooms": len(room_users),
@@ -1209,20 +1365,9 @@ async def get_stats():
         }
     }
 
-@app.get("/health")
-async def health():
-    return {
-        "status": "healthy",
-        "total_connections": len(active_users) + len(stranger_chat.stranger_users),
-        "regular_chat_active": len(active_users),
-        "stranger_chat_active": len(stranger_chat.stranger_users),
-        "timestamp": datetime.now().isoformat()
-    }
-
+# Main entry point for localhost development
 if __name__ == "__main__":
-    import uvicorn
-    port = int(os.environ.get("PORT", 8000))
-    print("🚀 Starting Multi-Feature Chat Server...")
+    print("🚀 Starting Multi-Feature Chat Server for Localhost Development...")
     print("🌐 Server: http://localhost:8000")
     print("🔌 Socket.IO: ws://localhost:8000/socket.io/")
     print("📊 Stats: http://localhost:8000/stats")
@@ -1232,4 +1377,6 @@ if __name__ == "__main__":
     print("🔍 Debug endpoints:")
     print("   - /debug/connections - View all stranger connections")
     print("   - /debug/user/{socket_id} - View specific user state")
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    print("💻 Environment: Localhost Development")
+    
+    uvicorn.run("main:socket_app", host="0.0.0.0", port=8000)

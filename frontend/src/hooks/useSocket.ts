@@ -37,10 +37,10 @@ export const useSocket = (serverUrl: string) => {
     console.log('🔌 Creating socket connection to:', serverUrl);
     
     // Determine the correct socket URL based on current location
-    const socketUrl = process.env.NODE_ENV === 'production' 
-  ? process.env.REACT_APP_API_URL || 'https://your-backend-url.vercel.app'
+   const socketUrl = process.env.NODE_ENV === 'production' 
+  ? 'https://chat-fres.vercel.app'  // Your actual backend URL
   : 'http://localhost:8000';
-    
+
     const newSocket = io(socketUrl, {
       transports: ['websocket', 'polling'],
       timeout: 20000,
@@ -249,18 +249,37 @@ export const useSocket = (serverUrl: string) => {
     currentSocket.emit('join_room', { username, roomId });
   }, [socket, isConnected]);
 
-  const sendMessage = useCallback((content: string, roomId: string) => {
-    const currentSocket = socketRef.current || socket;
-    
-    if (!currentSocket || !hasJoined || !content.trim()) {
-      return;
-    }
-
-    currentSocket.emit('send_message', {
-      message: content,
-      room: roomId
+const sendMessage = useCallback((content: string, roomId: string, fileInfo?: any) => {
+  const currentSocket = socketRef.current || socket;
+  
+  if (!currentSocket || !hasJoined) {
+    console.log('❌ SendMessage blocked:', { 
+      hasSocket: !!currentSocket, 
+      hasJoined
     });
-  }, [socket, hasJoined]);
+    return;
+  }
+
+  // FIXED: Allow empty content if we have fileInfo
+  if (!content.trim() && !fileInfo) {
+    console.log('❌ SendMessage blocked: No content and no file');
+    return;
+  }
+
+  const messageData: any = {
+    message: content,
+    room: roomId
+  };
+
+  // Add file info if provided
+  if (fileInfo) {
+    messageData.fileInfo = fileInfo;
+    console.log('📎 Sending file message with data:', fileInfo);
+  }
+
+  console.log('📤 useSocket sending message data to backend:', messageData);
+  currentSocket.emit('send_message', messageData);
+}, [socket, hasJoined]);
 
   // **MISSING FUNCTION - ADD THIS**
   const sendPrivateMessage = useCallback((content: string, toUserId: string) => {
