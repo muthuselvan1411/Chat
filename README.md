@@ -69,7 +69,7 @@ Backend: https://mumegle.up.railway.app/
 4. Environment Variables
    Frontend:
 
-text
+
 REACT_APP_API_URL=http://localhost:8000
 REACT_APP_SOCKET_URL=http://localhost:8000
 Backend:
