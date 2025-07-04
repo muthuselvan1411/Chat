@@ -40,7 +40,7 @@ const FileMessage: React.FC<FileMessageProps> = ({ fileInfo, isOwn, isDarkMode }
   const handleDownload = (e: React.MouseEvent) => {
     e.stopPropagation();
     const link = document.createElement('a');
-    link.href = `http://localhost:8000${fileInfo.url}`;
+    link.href = `https://mumegle.up.railway.app${fileInfo.url}`;
     link.download = fileInfo.filename;
     document.body.appendChild(link);
     link.click();
@@ -51,18 +51,18 @@ const FileMessage: React.FC<FileMessageProps> = ({ fileInfo, isOwn, isDarkMode }
     return (
       <div className="image-message">
         <img
-          src={`http://localhost:8000${fileInfo.url}`}
+          src={`https://mumegle.up.railway.app${fileInfo.url}`}
           alt={fileInfo.filename}
           className="rounded-xl max-w-full h-auto cursor-pointer hover:opacity-90 transition-opacity shadow-lg"
           onClick={(e) => {
             e.stopPropagation();
-            window.open(`http://localhost:8000${fileInfo.url}`, '_blank');
+            window.open(`https://mumegle.up.railway.app${fileInfo.url}`, '_blank');
           }}
           style={{ maxHeight: '300px', width: 'auto', pointerEvents: 'auto' }}
           onLoad={() => console.log('✅ Image loaded successfully')}
           onError={(e) => {
             console.error('❌ Image failed to load:', e);
-            console.error('❌ Image URL:', `http://localhost:8000${fileInfo.url}`);
+            console.error('❌ Image URL:', `https://mumegle.up.railway.app${fileInfo.url}`);
           }}
         />
         <div className="mt-2 flex items-center justify-between">
@@ -192,7 +192,7 @@ const VoiceMessage: React.FC<VoiceMessageProps> = ({ fileInfo, isOwn, isDarkMode
     }`}>
       <audio 
         ref={audioRef} 
-        src={`http://localhost:8000${fileInfo.url}`}
+        src={`https://mumegle.up.railway.app${fileInfo.url}`}
         preload="metadata"
       />
       

@@ -22,7 +22,7 @@ const PrivateChat: React.FC<PrivateChatProps> = ({
   onTyping,
   onBack
 }) => {
-  const { socket } = useSocket('http://localhost:8000');
+  const { socket } = useSocket('https://mumegle.up.railway.app');
   const { isDarkMode } = useTheme();
   
   // Chat states

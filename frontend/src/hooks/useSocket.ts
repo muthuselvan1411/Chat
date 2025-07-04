@@ -39,7 +39,7 @@ export const useSocket = (serverUrl: string) => {
     // Determine the correct socket URL based on current location
    const socketUrl = process.env.NODE_ENV === 'production' 
   ? 'https://chat-fres.vercel.app'  // Your actual backend URL
-  : 'http://localhost:8000';
+  : 'https://mumegle.up.railway.app';
 
     const newSocket = io(socketUrl, {
       transports: ['websocket', 'polling'],

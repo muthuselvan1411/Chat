@@ -63,7 +63,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
       const formData = new FormData();
       formData.append('file', file);
 
-      const response = await fetch('http://localhost:8000/upload', {
+      const response = await fetch('https://mumegle.up.railway.app/upload', {
         method: 'POST',
         body: formData,
       });
@@ -90,7 +90,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
       const formData = new FormData();
       formData.append('file', audioBlob, `voice-${Date.now()}.webm`);
 
-      const response = await fetch('http://localhost:8000/upload', {
+      const response = await fetch('https://mumegle.up.railway.app/upload', {
         method: 'POST',
         body: formData,
       });

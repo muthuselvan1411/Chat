@@ -43,7 +43,7 @@ const ChatRoom: React.FC<ChatRoomProps> = ({ username, roomId, onBack }) => {
     sendReply,
     editMessage,
     deleteMessage
-  } = useSocket('http://localhost:8000');
+  } = useSocket('https://mumegle.up.railway.app');
   
   const { isDarkMode, toggleTheme } = useTheme();
 

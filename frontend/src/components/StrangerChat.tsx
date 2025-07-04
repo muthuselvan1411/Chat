@@ -37,7 +37,7 @@ const StrangerChat: React.FC<StrangerChatProps> = ({ onBack }) => {
     acceptVideoCall,
     rejectVideoCall,
     endVideoCall
-  } = useSocket('http://localhost:8000');
+  } = useSocket('https://mumegle.up.railway.app');
 
   // Enhanced debug logging
   useEffect(() => {
@@ -126,7 +126,7 @@ const StrangerChat: React.FC<StrangerChatProps> = ({ onBack }) => {
 
   const debugBackendConnection = async () => {
     try {
-      const response = await fetch(`http://localhost:8000/debug/user/${socket?.id}`);
+      const response = await fetch(`https://mumegle.up.railway.app/debug/user/${socket?.id}`);
       const data = await response.json();
       console.log('🔍 Backend user state:', data);
       return data;

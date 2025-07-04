@@ -48,7 +48,7 @@ FRONTEND_PID=$!
 
 echo "✅ Application started successfully!"
 echo "📱 Frontend: http://localhost:3000"
-echo "🔧 Backend: http://localhost:8000"
+echo "🔧 Backend: https://mumegle.up.railway.app"
 echo "Press Ctrl+C to stop all servers"
 
 # Wait for user to stop
