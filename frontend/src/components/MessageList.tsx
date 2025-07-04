@@ -272,8 +272,19 @@ const MessageList: React.FC<MessageListProps> = ({
   const isDarkMode = propIsDarkMode ?? contextIsDarkMode;
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [highlightedMessage, setHighlightedMessage] = useState<string | null>(null);
+  const [highlightedMessage,setHighlightedMessage] = useState<string | null>(null);
   const messageRefs = useRef<{ [key: string]: HTMLDivElement }>({});
+
+  useEffect(() => {
+  const hash = window.location.hash; // e.g., #message-123
+  const id = hash?.replace('#message-', '');
+  if (id && messageRefs.current[id]) {
+    messageRefs.current[id].scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setHighlightedMessage(id); // Highlight the message
+    setTimeout(() => setHighlightedMessage(null), 2000); // Remove highlight after 2 seconds
+  }
+}, []);
+
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });

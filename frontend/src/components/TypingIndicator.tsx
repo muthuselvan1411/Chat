@@ -2,10 +2,10 @@ import React from 'react';
 
 interface TypingIndicatorProps {
   users: string[];
-  isDarkMode?: boolean;
+  
 }
 
-const TypingIndicator: React.FC<TypingIndicatorProps> = ({ users, isDarkMode = false }) => {
+const TypingIndicator: React.FC<TypingIndicatorProps> = ({ users }) => {
   if (users.length === 0) return null;
 
   const getTypingText = () => {

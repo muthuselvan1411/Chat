@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Paperclip, Send, X, File, Image, FileText } from 'lucide-react';
+import { Paperclip, Send, X, File } from 'lucide-react';
 
 interface FileUploadProps {
   onFileSelect: (file: File, message?: string) => void;

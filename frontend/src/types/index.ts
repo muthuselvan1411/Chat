@@ -11,7 +11,8 @@ export interface Message {
   userId?: string;
   username: string;
   timestamp: string;
-  type: 'message' | 'system' | 'private';
+  type: 'message' | 'system' | 'private'|'file';
+  file?:any;
   room?: string;
   from?: string;
   fromId?: string;
@@ -24,6 +25,9 @@ export interface Message {
     username: string;
     content: string;
   };
+  status?: 'sent' | 'delivered' | 'read';
+  edited?: boolean;        // Add this
+  edited_at?: string;      // Add this
 }
 export interface Reaction {
   emoji: string;

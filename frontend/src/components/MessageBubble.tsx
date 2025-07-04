@@ -86,6 +86,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
     
     console.log('📍 Menu position:', { x, y, isOwn, rectLeft: rect.left, rectRight: rect.right });
   };
+console.log("Current logged-in user:", currentUsername);
 
   // Close context menu when clicking elsewhere
   useEffect(() => {
