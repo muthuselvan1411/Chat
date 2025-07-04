@@ -1,5 +1,5 @@
 import React from 'react';
-import { Reply, CornerDownRight } from 'lucide-react';
+import { CornerDownRight } from 'lucide-react';
 
 interface ReplyPreviewProps {
   originalMessage: {
@@ -9,7 +9,7 @@ interface ReplyPreviewProps {
   onReply: () => void;
 }
 
-const ReplyPreview: React.FC<ReplyPreviewProps> = ({ originalMessage, onReply }) => {
+const ReplyPreview: React.FC<ReplyPreviewProps> = ({ originalMessage }) => {
   return (
     <div className="mb-2 p-2 bg-gray-100 dark:bg-gray-700 rounded-lg border-l-4 border-blue-500">
       <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400 mb-1">

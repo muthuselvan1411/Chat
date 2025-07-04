@@ -8,10 +8,10 @@
     "css": "css",
     "scss": "scss"
   },
-  "tailwindCSS.experimental.classRegex": [
-    "class[Name]*\\s*[:=]\\s*['\"`]([^'\"`]*)['\"`]"
-  ],
   "files.associations": {
     "*.css": "tailwindcss"
+  },
+  "emmet.includeLanguages": {
+    "tailwindcss": "css"
   }
 }
