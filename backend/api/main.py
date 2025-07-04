@@ -31,13 +31,14 @@ rooms_storage: Dict[str, list] = {}
 
 # Create Socket.IO server with proper configuration for localhost
 sio = socketio.AsyncServer(
-    async_mode="asgi",
     cors_allowed_origins=[
+        "https://mumegle.vercel.app",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "https://localhost:3000",
         "http://192.168.1.7:3000"
     ],
+    async_mode="asgi",
     logger=False,
     engineio_logger=False
 )
@@ -45,10 +46,10 @@ sio = socketio.AsyncServer(
 # Create FastAPI app
 app = FastAPI(title="Multi-Feature Chat API")
 
-# CORS configuration for localhost development
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        "https://mumegle.vercel.app",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "https://localhost:3000",
@@ -60,6 +61,7 @@ app.add_middleware(
 )
 
 # Serve uploaded files
+# CORS configuration for localhost development
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 # EXISTING FEATURES - Store active users, rooms, and private conversations
