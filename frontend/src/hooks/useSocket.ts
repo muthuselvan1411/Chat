@@ -85,6 +85,41 @@ export const useSocket = (serverUrl: string) => {
       setMessages(prev => [...prev, message]);
     });
 
+    // **NEW: Message editing/deletion event listeners**
+    newSocket.on('message_edited', (data: any) => {
+      console.log('✏️ Message edited:', data);
+      setMessages(prev => prev.map(msg => 
+        msg.id === data.message_id 
+          ? { 
+              ...msg, 
+              content: data.new_content, 
+              edited: true, 
+              edited_at: data.edited_at 
+            }
+          : msg
+      ));
+      
+      // Also update stranger messages if in stranger mode
+      setStrangerMessages(prev => prev.map(msg => 
+        msg.id === data.message_id 
+          ? { 
+              ...msg, 
+              content: data.new_content, 
+              edited: true, 
+              edited_at: data.edited_at 
+            }
+          : msg
+      ));
+    });
+
+    newSocket.on('message_deleted', (data: any) => {
+      console.log('🗑️ Message deleted:', data);
+      setMessages(prev => prev.filter(msg => msg.id !== data.message_id));
+      
+      // Also update stranger messages if in stranger mode
+      setStrangerMessages(prev => prev.filter(msg => msg.id !== data.message_id));
+    });
+
     newSocket.on('private_message', (message: Message) => {
       console.log('🔒 Received private message:', message);
       setPrivateMessages(prev => [...prev, message]);
@@ -249,39 +284,91 @@ export const useSocket = (serverUrl: string) => {
     currentSocket.emit('join_room', { username, roomId });
   }, [socket, isConnected]);
 
-const sendMessage = useCallback((content: string, roomId: string, fileInfo?: any) => {
+  const sendMessage = useCallback((content: string, roomId: string, fileInfo?: any) => {
+    const currentSocket = socketRef.current || socket;
+    
+    if (!currentSocket || !hasJoined) {
+      console.log('❌ SendMessage blocked:', { 
+        hasSocket: !!currentSocket, 
+        hasJoined
+      });
+      return;
+    }
+
+    // FIXED: Allow empty content if we have fileInfo
+    if (!content.trim() && !fileInfo) {
+      console.log('❌ SendMessage blocked: No content and no file');
+      return;
+    }
+
+    const messageData: any = {
+      message: content,
+      room: roomId
+    };
+
+    // Add file info if provided
+    if (fileInfo) {
+      messageData.fileInfo = fileInfo;
+      console.log('📎 Sending file message with data:', fileInfo);
+    }
+
+    console.log('📤 useSocket sending message data to backend:', messageData);
+    currentSocket.emit('send_message', messageData);
+  }, [socket, hasJoined]);
+
+  // **NEW: Message editing/deletion functions**
+  const editMessage = useCallback((messageId: string, newContent: string, room: string) => {
+    const currentSocket = socketRef.current || socket;
+    
+    if (!currentSocket || !hasJoined) {
+      console.log('❌ EditMessage blocked:', { 
+        hasSocket: !!currentSocket, 
+        hasJoined
+      });
+      return;
+    }
+
+    if (!messageId || !newContent.trim()) {
+      console.log('❌ EditMessage blocked: Invalid messageId or content');
+      return;
+    }
+
+    console.log('✏️ Editing message:', messageId, newContent);
+    currentSocket.emit('edit_message', {
+      message_id: messageId,
+      new_content: newContent.trim(),
+      room: room
+    });
+  }, [socket, hasJoined]);
+// Fix the deleteMessage function
+const deleteMessage = useCallback((messageId: string, room: string) => {
   const currentSocket = socketRef.current || socket;
   
-  if (!currentSocket || !hasJoined) {
-    console.log('❌ SendMessage blocked:', { 
-      hasSocket: !!currentSocket, 
-      hasJoined
-    });
+  console.log('🗑️ DeleteMessage called:', { messageId, room, hasSocket: !!currentSocket, hasJoined });
+  
+  if (!currentSocket) {
+    console.log('❌ DeleteMessage blocked: No socket connection');
     return;
   }
 
-  // FIXED: Allow empty content if we have fileInfo
-  if (!content.trim() && !fileInfo) {
-    console.log('❌ SendMessage blocked: No content and no file');
+  if (!hasJoined) {
+    console.log('❌ DeleteMessage blocked: Not joined to room');
     return;
   }
 
-  const messageData: any = {
-    message: content,
-    room: roomId
-  };
-
-  // Add file info if provided
-  if (fileInfo) {
-    messageData.fileInfo = fileInfo;
-    console.log('📎 Sending file message with data:', fileInfo);
+  if (!messageId) {
+    console.log('❌ DeleteMessage blocked: Invalid messageId');
+    return;
   }
 
-  console.log('📤 useSocket sending message data to backend:', messageData);
-  currentSocket.emit('send_message', messageData);
+  console.log('🗑️ useSocket deleting message:', messageId, 'in room:', room);
+  currentSocket.emit('delete_message', {
+    message_id: messageId,
+    room: room
+  });
 }, [socket, hasJoined]);
 
-  // **MISSING FUNCTION - ADD THIS**
+
   const sendPrivateMessage = useCallback((content: string, toUserId: string) => {
     const currentSocket = socketRef.current || socket;
     
@@ -521,10 +608,14 @@ const sendMessage = useCallback((content: string, roomId: string, fileInfo?: any
     messageReactions,
     joinRoom,
     sendMessage,
-    sendPrivateMessage, // **ADDED THIS MISSING FUNCTION**
+    sendPrivateMessage,
     addReaction,
     removeReaction,
     sendReply,
+    
+    // **NEW: Message editing/deletion functions**
+    editMessage,
+    deleteMessage,
     
     // Stranger chat
     chatMode,

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Video, VideoOff, SkipForward, MessageCircle, Phone, PhoneOff } from 'lucide-react';
+import { ArrowLeft, Video, SkipForward, MessageCircle, Phone, PhoneOff } from 'lucide-react';
 import { useSocket } from '../hooks/useSocket';
 import { useTheme } from '../contexts/ThemeContext';
 import MessageInput from './MessageInput';
@@ -233,7 +233,7 @@ const StrangerChat: React.FC<StrangerChatProps> = ({ onBack }) => {
         onBack={onBack}
         partnerName={partnerName}
         strangerPartner={strangerPartner}
-        strangerRoomId={strangerRoomId}
+        strangerRoomId={strangerRoomId|| undefined}
         socket={socket}
       />
     );

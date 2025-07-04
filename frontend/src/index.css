@@ -88,6 +88,23 @@
     outline-offset: 2px;
   }
 }
+/* Professional system message styling */
+.message-system {
+  @apply mx-auto text-center text-sm px-4 py-2 rounded-full;
+  background: linear-gradient(135deg, rgba(107, 114, 128, 0.1) 0%, rgba(156, 163, 175, 0.1) 100%);
+  color: var(--gray-600);
+  border: 1px solid rgba(107, 114, 128, 0.2);
+  box-shadow: none;
+  font-weight: 400;
+  max-width: 300px;
+  width: fit-content;
+}
+
+.dark .message-system {
+  background: linear-gradient(135deg, rgba(75, 85, 99, 0.2) 0%, rgba(107, 114, 128, 0.2) 100%);
+  color: var(--gray-400);
+  border: 1px solid rgba(107, 114, 128, 0.3);
+}
 
 @layer components {
   /* Layout Components */
@@ -182,7 +199,7 @@
     max-width: 100%;
   }
 
-  /* Fixed Message Bubbles with Proper Width Constraints */
+  /* FIXED: Enhanced Message Bubbles with Touch Support */
   .message-bubble {
     @apply px-4 py-3 rounded-2xl break-words relative;
     animation: messageSlideIn var(--transition-normal) ease-out;
@@ -190,6 +207,40 @@
     overflow-wrap: break-word;
     max-width: min(480px, 70vw);
     width: fit-content;
+    
+    /* Enhanced touch handling */
+    touch-action: none !important;
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    -webkit-touch-callout: none !important;
+    -webkit-tap-highlight-color: transparent !important;
+    
+    /* Smooth transitions for touch feedback */
+    transition: transform 0.1s ease-out, opacity 0.1s ease-out, scale 0.2s ease-out !important;
+  }
+
+  /* Prevent text selection during touch on all child elements */
+  .message-bubble * {
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    pointer-events: none !important;
+  }
+
+  /* Allow text selection and interaction only in edit mode */
+  .message-bubble textarea,
+  .message-bubble input,
+  .message-bubble button {
+    user-select: text !important;
+    -webkit-user-select: text !important;
+    touch-action: manipulation !important;
+    pointer-events: auto !important;
+  }
+
+  /* Re-enable pointer events for interactive elements */
+  .message-bubble button,
+  .message-bubble a,
+  .message-bubble [role="button"] {
+    pointer-events: auto !important;
   }
 
   /* File Message Specific Styles */
@@ -211,6 +262,7 @@
     height: auto !important;
     object-fit: cover;
     border-radius: 12px;
+    pointer-events: auto !important;
   }
 
   .message-own {
@@ -373,7 +425,15 @@
     background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(15, 23, 42, 0.8) 100%);
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   }
+.voice-message-container.light-mode {
+  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
 
+.voice-waveform-bar.light-mode {
+  background: #3b82f6; /* Blue color for better visibility */
+}
   /* Fixed Floating Elements */
   .floating-button {
     @apply p-3 rounded-full transition-all transform;
@@ -656,11 +716,10 @@
   }
 }
 
-/* Fixed File Upload Modal */
-/* File Upload Modal Positioning Fix */
+/* File Upload Modal Positioning */
 .file-upload-modal-container {
   position: fixed !important;
-  bottom: 120px !important; /* Adjust based on your message input height */
+  bottom: 120px !important;
   left: 50% !important;
   transform: translateX(-50%) !important;
   z-index: 9999 !important;
@@ -678,22 +737,6 @@
   background-color: rgba(0, 0, 0, 0.6) !important;
   backdrop-filter: blur(4px) !important;
   z-index: 9998 !important;
-}
-
-/* Mobile specific adjustments */
-@media (max-width: 768px) {
-  .file-upload-modal-container {
-    bottom: 100px !important;
-    max-width: 90vw !important;
-  }
-}
-
-/* Ensure modal doesn't go off screen on small heights */
-@media (max-height: 600px) {
-  .file-upload-modal-container {
-    bottom: 80px !important;
-    max-height: 400px !important;
-  }
 }
 
 /* Animation Classes */
@@ -801,6 +844,19 @@
   .notification-badge {
     @apply -top-0.5 -right-0.5 w-4 h-4;
     font-size: 9px;
+  }
+
+  .file-upload-modal-container {
+    bottom: 100px !important;
+    max-width: 90vw !important;
+  }
+}
+
+/* Ensure modal doesn't go off screen on small heights */
+@media (max-height: 600px) {
+  .file-upload-modal-container {
+    bottom: 80px !important;
+    max-height: 400px !important;
   }
 }
 

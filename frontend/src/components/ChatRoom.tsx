@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { 
   Users, Hash, Moon, Sun, ArrowLeft, MessageSquare, Bug, Menu, X, 
   Wifi, WifiOff, Settings, Search, Filter, MoreVertical, Bell, BellOff,
-  Shield, Crown, Star, Zap
+  Zap
 } from 'lucide-react';
 import { useSocket } from '../hooks/useSocket';
 import { useTheme } from '../contexts/ThemeContext';
@@ -27,7 +27,6 @@ interface ConnectionStats {
 const ChatRoom: React.FC<ChatRoomProps> = ({ username, roomId, onBack }) => {
   const { 
     socket,
-    socketRef,
     isConnected, 
     messages, 
     privateMessages,
@@ -41,7 +40,9 @@ const ChatRoom: React.FC<ChatRoomProps> = ({ username, roomId, onBack }) => {
     endPrivateChat,
     addReaction,
     removeReaction,
-    sendReply
+    sendReply,
+    editMessage,
+    deleteMessage
   } = useSocket('http://localhost:8000');
   
   const { isDarkMode, toggleTheme } = useTheme();
@@ -80,7 +81,7 @@ const ChatRoom: React.FC<ChatRoomProps> = ({ username, roomId, onBack }) => {
     }
   }, [isConnected, hasJoined, username, roomId, joinRoom]);
 
-  // Connection monitoring
+  // Connection monitoring - FIXED
   useEffect(() => {
     if (!socket) return;
 
@@ -105,6 +106,7 @@ const ChatRoom: React.FC<ChatRoomProps> = ({ username, roomId, onBack }) => {
     socket.on('pong', handlePong);
     socket.on('reconnect', handleReconnect);
 
+    // FIXED: Return cleanup function properly
     return () => {
       clearInterval(pingInterval);
       socket.off('pong', handlePong);
@@ -117,7 +119,7 @@ const ChatRoom: React.FC<ChatRoomProps> = ({ username, roomId, onBack }) => {
     if (!socket) return;
 
     const handleUserTyping = (data: any) => {
-      if (data.isPrivate) return; // Handle in PrivateChat component
+      if (data.isPrivate) return;
       
       if (data.room === roomId) {
         if (data.typing) {
@@ -129,7 +131,9 @@ const ChatRoom: React.FC<ChatRoomProps> = ({ username, roomId, onBack }) => {
     };
 
     socket.on('user_typing', handleUserTyping);
-    return () => socket.off('user_typing', handleUserTyping);
+    return () => {
+      socket.off('user_typing', handleUserTyping);
+    };
   }, [socket, roomId]);
 
   // Message count tracking
@@ -167,24 +171,31 @@ const ChatRoom: React.FC<ChatRoomProps> = ({ username, roomId, onBack }) => {
     setReplyingTo({ messageId, username, content });
   }, []);
 
- const handleSendMessage = useCallback((content: string, fileInfo?: any) => {
-  console.log('📤 ChatRoom handleSendMessage called with:', { content, fileInfo });
-  
-  if (replyingTo) {
-    console.log('📤 Sending reply message');
-    sendReply(replyingTo.messageId, replyingTo.username, replyingTo.content, content);
-    setReplyingTo(null);
-  } else if (isInPrivateChat && privateChatUserId) {
-    console.log('🔒 Sending private message via ChatRoom:', content, 'to:', privateChatUserId);
-    sendPrivateMessage(content, privateChatUserId);
-  } else {
-    console.log('📤 ChatRoom sending message:', content, 'fileInfo:', fileInfo);
-    console.log('📤 ChatRoom calling sendMessage with roomId:', roomId);
-    sendMessage(content, roomId, fileInfo); // Pass fileInfo to sendMessage
-  }
-}, [replyingTo, isInPrivateChat, privateChatUserId, sendReply, sendPrivateMessage, sendMessage, roomId]);
+  const handleSendMessage = useCallback((content: string, fileInfo?: any) => {
+    console.log('📤 ChatRoom handleSendMessage called with:', { content, fileInfo });
+    
+    if (replyingTo) {
+      console.log('📤 Sending reply message');
+      sendReply(replyingTo.messageId, replyingTo.username, replyingTo.content, content);
+      setReplyingTo(null);
+    } else if (isInPrivateChat && privateChatUserId) {
+      console.log('🔒 Sending private message via ChatRoom:', content, 'to:', privateChatUserId);
+      sendPrivateMessage(content, privateChatUserId);
+    } else {
+      console.log('📤 ChatRoom sending message:', content, 'fileInfo:', fileInfo);
+      sendMessage(content, roomId, fileInfo);
+    }
+  }, [replyingTo, isInPrivateChat, privateChatUserId, sendReply, sendPrivateMessage, sendMessage, roomId]);
 
+  const handleEditMessage = (messageId: string, newContent: string) => {
+    console.log('✏️ ChatRoom editing message:', messageId, newContent);
+    editMessage(messageId, newContent, roomId);
+  };
 
+  const handleDeleteMessage = (messageId: string) => {
+    console.log('🗑️ ChatRoom deleting message:', messageId);
+    deleteMessage(messageId, roomId);
+  };
 
   const handleTyping = useCallback((isTyping: boolean) => {
     if (isInPrivateChat && privateChatUserId) {
@@ -611,13 +622,12 @@ const ChatRoom: React.FC<ChatRoomProps> = ({ username, roomId, onBack }) => {
                 </div>
               </div>
 
+              {/* FIXED: Removed onPrivateMessage prop */}
               <UserList 
                 users={filteredUsers} 
                 currentUsername={username}
                 onUserClick={handleUserClick}
                 selectedUser={currentUser}
-                onPrivateMessage={handleUserClick}
-                isDarkMode={isDarkMode}
               />
             </div>
           )}
@@ -698,6 +708,8 @@ const ChatRoom: React.FC<ChatRoomProps> = ({ username, roomId, onBack }) => {
             onAddReaction={addReaction}
             onRemoveReaction={removeReaction}
             onReply={handleReply}
+            onEditMessage={handleEditMessage}
+            onDeleteMessage={handleDeleteMessage}
             currentRoom={roomId}
             isDarkMode={isDarkMode}
           />

@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Reply, MoreHorizontal, Clock, Check, CheckCheck, Play, Pause, File, Download } from 'lucide-react';
+import { Play, Pause, File, Download } from 'lucide-react';
 import { Message } from '../types';
 import { useTheme } from '../contexts/ThemeContext';
 import MessageReactions from './MessageReactions';
+import MessageBubble from './MessageBubble';
 
 interface MessageListProps {
   messages: Message[];
@@ -12,6 +13,8 @@ interface MessageListProps {
   onAddReaction?: (messageId: string, emoji: string, room: string) => void;
   onRemoveReaction?: (messageId: string, emoji: string, room: string) => void;
   onReply?: (messageId: string, username: string, content: string) => void;
+  onEditMessage?: (messageId: string, newContent: string) => void;
+  onDeleteMessage?: (messageId: string) => void;
   currentRoom?: string;
   isDarkMode?: boolean;
 }
@@ -34,7 +37,8 @@ const FileMessage: React.FC<FileMessageProps> = ({ fileInfo, isOwn, isDarkMode }
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  const handleDownload = () => {
+  const handleDownload = (e: React.MouseEvent) => {
+    e.stopPropagation();
     const link = document.createElement('a');
     link.href = `http://localhost:8000${fileInfo.url}`;
     link.download = fileInfo.filename;
@@ -43,8 +47,6 @@ const FileMessage: React.FC<FileMessageProps> = ({ fileInfo, isOwn, isDarkMode }
     document.body.removeChild(link);
   };
 
-  console.log('🖼️ Rendering file message:', fileInfo);
-
   if (isImage(fileInfo.type)) {
     return (
       <div className="image-message">
@@ -52,8 +54,11 @@ const FileMessage: React.FC<FileMessageProps> = ({ fileInfo, isOwn, isDarkMode }
           src={`http://localhost:8000${fileInfo.url}`}
           alt={fileInfo.filename}
           className="rounded-xl max-w-full h-auto cursor-pointer hover:opacity-90 transition-opacity shadow-lg"
-          onClick={() => window.open(`http://localhost:8000${fileInfo.url}`, '_blank')}
-          style={{ maxHeight: '300px', width: 'auto' }}
+          onClick={(e) => {
+            e.stopPropagation();
+            window.open(`http://localhost:8000${fileInfo.url}`, '_blank');
+          }}
+          style={{ maxHeight: '300px', width: 'auto', pointerEvents: 'auto' }}
           onLoad={() => console.log('✅ Image loaded successfully')}
           onError={(e) => {
             console.error('❌ Image failed to load:', e);
@@ -76,6 +81,7 @@ const FileMessage: React.FC<FileMessageProps> = ({ fileInfo, isOwn, isDarkMode }
                   : 'hover:bg-gray-100 text-gray-600'
             }`}
             title="Download"
+            style={{ pointerEvents: 'auto' }}
           >
             <Download className="w-4 h-4" />
           </button>
@@ -90,6 +96,7 @@ const FileMessage: React.FC<FileMessageProps> = ({ fileInfo, isOwn, isDarkMode }
         isDarkMode ? 'bg-gray-700/50' : 'bg-gray-100'
       }`}
       onClick={handleDownload}
+      style={{ pointerEvents: 'auto' }}
     >
       <File className="w-8 h-8 text-blue-500 flex-shrink-0" />
       <div className="flex-1 min-w-0">
@@ -109,7 +116,7 @@ const FileMessage: React.FC<FileMessageProps> = ({ fileInfo, isOwn, isDarkMode }
   );
 };
 
-// VoiceMessage Component (your existing one)
+// VoiceMessage Component
 interface VoiceMessageProps {
   fileInfo: any;
   isOwn: boolean;
@@ -117,10 +124,133 @@ interface VoiceMessageProps {
 }
 
 const VoiceMessage: React.FC<VoiceMessageProps> = ({ fileInfo, isOwn, isDarkMode }) => {
-  // Your existing VoiceMessage implementation
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(fileInfo.duration || 0);
+  const [audioLevels] = useState<number[]>(fileInfo.waveform || []);
+  const audioRef = useRef<HTMLAudioElement>(null);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const updateTime = () => setCurrentTime(audio.currentTime);
+    const updateDuration = () => {
+      setDuration(audio.duration);
+    };
+    const handleEnded = () => {
+      setIsPlaying(false);
+      setCurrentTime(0);
+    };
+    const handleError = (e: any) => {
+      console.error('❌ Audio playback error:', e);
+    };
+
+    audio.addEventListener('timeupdate', updateTime);
+    audio.addEventListener('loadedmetadata', updateDuration);
+    audio.addEventListener('ended', handleEnded);
+    audio.addEventListener('error', handleError);
+
+    return () => {
+      audio.removeEventListener('timeupdate', updateTime);
+      audio.removeEventListener('loadedmetadata', updateDuration);
+      audio.removeEventListener('ended', handleEnded);
+      audio.removeEventListener('error', handleError);
+    };
+  }, []);
+
+  const togglePlay = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    if (isPlaying) {
+      audio.pause();
+      setIsPlaying(false);
+    } else {
+      audio.play().then(() => {
+        setIsPlaying(true);
+      }).catch(error => {
+        console.error('❌ Audio play failed:', error);
+      });
+    }
+  };
+
+  const formatTime = (seconds: number) => {
+    if (!seconds || isNaN(seconds)) return '0:00';
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+  const displayLevels = audioLevels.length > 0 ? audioLevels : Array(20).fill(0.3);
+
   return (
-    <div className="voice-message-container">
-      <p>Voice Message: {fileInfo.filename}</p>
+    <div className={`flex items-center gap-3 p-3 rounded-xl min-w-[200px] max-w-[300px] transition-all duration-200 ${
+      isDarkMode ? 'bg-gray-700/50 hover:bg-gray-700/70' : 'bg-gray-100 hover:bg-gray-200'
+    }`}>
+      <audio 
+        ref={audioRef} 
+        src={`http://localhost:8000${fileInfo.url}`}
+        preload="metadata"
+      />
+      
+      <button
+        onClick={togglePlay}
+        className={`p-2 rounded-full transition-all duration-200 hover:scale-105 ${
+          isOwn 
+            ? 'bg-white/20 hover:bg-white/30 text-white' 
+            : isDarkMode
+              ? 'bg-blue-500 hover:bg-blue-600 text-white'
+              : 'bg-blue-500 hover:bg-blue-600 text-white'
+        }`}
+        style={{ pointerEvents: 'auto' }}
+      >
+        {isPlaying ? (
+          <Pause className="w-4 h-4" />
+        ) : (
+          <Play className="w-4 h-4" />
+        )}
+      </button>
+
+      <div className="flex-1 space-y-1">
+        <div className="relative h-6 flex items-center">
+          <div className="flex items-center gap-0.5 h-full w-full">
+            {displayLevels.map((level: number, index: number) => (
+              <div
+                key={index}
+                className={`rounded-full transition-all duration-200 ${
+                  (index / displayLevels.length) * 100 <= progress
+                    ? isOwn 
+                      ? 'bg-white' 
+                      : 'bg-blue-500'
+                    : isOwn
+                      ? 'bg-white/30'
+                      : isDarkMode 
+                        ? 'bg-gray-500' 
+                        : 'bg-gray-400'
+                }`}
+                style={{
+                  width: '2px',
+                  height: `${Math.max(4, level * 20)}px`,
+                  flex: 1
+                }}
+              />
+            ))}
+          </div>
+        </div>
+        
+        <div className={`text-xs font-medium voice-message-text ${
+          isOwn 
+            ? 'text-white/90' 
+            : isDarkMode 
+              ? 'text-gray-200' 
+              : 'text-gray-700'
+        }`}>
+          {formatTime(currentTime)} / {formatTime(duration)}
+        </div>
+      </div>
     </div>
   );
 };
@@ -133,6 +263,8 @@ const MessageList: React.FC<MessageListProps> = ({
   onAddReaction,
   onRemoveReaction,
   onReply,
+  onEditMessage,
+  onDeleteMessage,
   currentRoom = '',
   isDarkMode: propIsDarkMode
 }) => {
@@ -140,44 +272,11 @@ const MessageList: React.FC<MessageListProps> = ({
   const isDarkMode = propIsDarkMode ?? contextIsDarkMode;
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const [showActions, setShowActions] = useState<string | null>(null);
   const [highlightedMessage, setHighlightedMessage] = useState<string | null>(null);
   const messageRefs = useRef<{ [key: string]: HTMLDivElement }>({});
 
-  // Debug messages
-  // Add this useEffect for debugging (ONLY ONCE at the top of your component)
-useEffect(() => {
-  console.log('📨 Total messages received:', messages.length);
-  messages.forEach((msg, index) => {
-    console.log(`📝 Message ${index}:`, {
-      id: msg.id,
-      type: msg.type,
-      content: msg.content,
-      hasFile: !!msg.file,
-      username: msg.username,
-      timestamp: msg.timestamp
-    });
-    
-    if (msg.type === 'file') {
-      console.log(`📁 File message details:`, msg.file);
-    }
-  });
-}, [messages]); // This will only run when messages change
-
-
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  const scrollToMessage = (messageId: string) => {
-    const messageElement = messageRefs.current[messageId];
-    if (messageElement) {
-      messageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      setHighlightedMessage(messageId);
-      setTimeout(() => {
-        setHighlightedMessage(null);
-      }, 2000);
-    }
   };
 
   useEffect(() => {
@@ -223,12 +322,6 @@ useEffect(() => {
     return gradients[index % gradients.length];
   };
 
-  const handleReply = (message: Message) => {
-    if (onReply) {
-      onReply(message.id, message.username, message.content);
-    }
-  };
-
   const handleAddReaction = (messageId: string, emoji: string) => {
     if (onAddReaction && currentRoom) {
       onAddReaction(messageId, emoji, currentRoom);
@@ -260,20 +353,27 @@ useEffect(() => {
     return (
       <div className="flex items-center justify-center h-full p-8">
         <div className="text-center max-w-md animate-fade-in-up">
-          <div className="user-avatar w-20 h-20 mx-auto mb-6">
-            <span className="text-2xl">💬</span>
-          </div>
-          <h3 className={`text-xl font-semibold mb-3 transition-colors duration-300 ${
-            isDarkMode ? 'text-white' : 'text-gray-900'
+          <div className={`w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center ${
+            isDarkMode 
+              ? 'bg-gray-700/50 text-gray-400' 
+              : 'bg-gray-100 text-gray-500'
           }`}>
-            {isPrivateChat ? 'No messages yet' : 'Welcome to the chat!'}
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+          </div>
+          
+          <h3 className={`text-lg font-medium mb-2 transition-colors duration-300 ${
+            isDarkMode ? 'text-gray-300' : 'text-gray-700'
+          }`}>
+            {isPrivateChat ? 'No messages yet' : 'Welcome to the conversation'}
           </h3>
-          <p className={`transition-colors duration-300 ${
-            isDarkMode ? 'text-gray-400' : 'text-gray-600'
+          <p className={`text-sm transition-colors duration-300 ${
+            isDarkMode ? 'text-gray-500' : 'text-gray-500'
           }`}>
             {isPrivateChat 
               ? 'Start your private conversation by sending a message' 
-              : 'Be the first to break the ice and send a message'
+              : 'Send a message to begin the discussion'
             }
           </p>
         </div>
@@ -305,15 +405,13 @@ useEffect(() => {
                 messageRefs.current[message.id] = el;
               }
             }}
-            className={`flex items-end gap-3 group transition-all duration-300 ${
+            className={`flex items-end gap-3 transition-all duration-300 ${
               message.type === 'system' 
                 ? 'justify-center' 
                 : isOwn 
                   ? 'justify-end' 
                   : 'justify-start'
             } ${isHighlighted ? 'scale-105' : ''}`}
-            onMouseEnter={() => setShowActions(message.id)}
-            onMouseLeave={() => setShowActions(null)}
           >
             {/* Avatar for other users */}
             {!isOwn && message.type !== 'system' && (
@@ -340,31 +438,21 @@ useEffect(() => {
                 </div>
               )}
 
-              {/* Message Bubble */}
-              <div
-                className={`message-bubble relative ${
-                  message.type === 'system'
-                    ? 'message-system'
-                    : isOwn
-                      ? 'message-own'
-                      : 'message-other'
-                } ${isHighlighted ? 'ring-2 ring-blue-400 ring-opacity-50' : ''}`}
+              {/* Enhanced Message Bubble with Touch Gestures */}
+              <MessageBubble
+                message={message}
+                isOwn={isOwn}
+                isDarkMode={isDarkMode}
+                currentUsername={currentUsername}
+                onEdit={onEditMessage}
+                onDelete={onDeleteMessage}
+                onReply={onReply}
+                onAddReaction={(messageId, emoji) => handleAddReaction(messageId, emoji)}
+                formatTime={formatTime}
               >
-                {/* CRITICAL: Fixed Message Content Rendering */}
+                {/* Message Content */}
                 {(() => {
-                  console.log('🔍 Rendering message:', {
-                    id: message.id,
-                    type: message.type,
-                    hasFile: !!message.file,
-                    fileType: message.file?.file_type,
-                    isVoiceMessage: message.file?.isVoiceMessage,
-                    content: message.content,
-                    fileInfo: message.file
-                  });
-
-                  // Check if it's a file message
                   if (message.type === 'file' && message.file) {
-                    // Voice message check
                     if (message.file.isVoiceMessage || message.file.file_type === 'voice') {
                       return (
                         <VoiceMessage 
@@ -373,9 +461,7 @@ useEffect(() => {
                           isDarkMode={isDarkMode} 
                         />
                       );
-                    }
-                    // Regular file message (images, documents, etc.)
-                    else {
+                    } else {
                       return (
                         <FileMessage 
                           fileInfo={message.file} 
@@ -386,99 +472,23 @@ useEffect(() => {
                     }
                   }
                   
-                  // Regular text message
                   return (
                     <div className="text-sm leading-relaxed whitespace-pre-wrap">
                       {message.content || ''}
                     </div>
                   );
                 })()}
+              </MessageBubble>
 
-                {/* Timestamp */}
-                <div className={`flex items-center gap-1 text-xs mt-2 ${
-                  message.type === 'system' 
-                    ? isDarkMode ? 'text-yellow-400' : 'text-yellow-600'
-                    : isOwn 
-                      ? 'text-white/70' 
-                      : isDarkMode ? 'text-gray-400' : 'text-gray-500'
-                }`}>
-                  <Clock className="w-3 h-3" />
-                  <span>{formatTime(message.timestamp)}</span>
-                  {isOwn && (
-                    <div className="ml-1">
-                      {message.status === 'sent' && <Check className="w-3 h-3" />}
-                      {message.status === 'delivered' && <CheckCheck className="w-3 h-3" />}
-                      {message.status === 'read' && <CheckCheck className="w-3 h-3 text-blue-400" />}
-                    </div>
-                  )}
-                </div>
-
-                {/* Quick Actions */}
-                {showActions === message.id && message.type !== 'system' && (onAddReaction || onReply) && (
-                  <div className={`absolute ${isOwn ? 'right-full mr-2' : 'left-full ml-2'} top-0 flex items-center gap-1 glass-effect rounded-xl shadow-xl p-2 opacity-0 group-hover:opacity-100 transition-all duration-200 z-10 animate-fade-in`}>
-                    {onAddReaction && (
-                      <>
-                        <button
-                          onClick={() => handleAddReaction(message.id, '❤️')}
-                          className={`p-1.5 rounded-lg text-sm transition-all duration-200 hover:scale-110 ${
-                            isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
-                          }`}
-                          title="Love"
-                        >
-                          ❤️
-                        </button>
-                        <button
-                          onClick={() => handleAddReaction(message.id, '👍')}
-                          className={`p-1.5 rounded-lg text-sm transition-all duration-200 hover:scale-110 ${
-                            isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
-                          }`}
-                          title="Like"
-                        >
-                          👍
-                        </button>
-                        <button
-                          onClick={() => handleAddReaction(message.id, '😂')}
-                          className={`p-1.5 rounded-lg text-sm transition-all duration-200 hover:scale-110 ${
-                            isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
-                          }`}
-                          title="Laugh"
-                        >
-                          😂
-                        </button>
-                      </>
-                    )}
-                    {onReply && (
-                      <button
-                        onClick={() => handleReply(message)}
-                        className={`p-1.5 rounded-lg transition-all duration-200 hover:scale-110 ${
-                          isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
-                        }`}
-                        title="Reply"
-                      >
-                        <Reply className="w-3 h-3" />
-                      </button>
-                    )}
-                    <button 
-                      className={`p-1.5 rounded-lg transition-all duration-200 hover:scale-110 ${
-                        isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
-                      }`}
-                      title="More options"
-                    >
-                      <MoreHorizontal className="w-3 h-3" />
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Message Reactions */}
+              {/* Message Reactions - Fixed TypeScript errors */}
               {currentMessageReactions.length > 0 && MessageReactions && (
                 <div className="mt-2 animate-fade-in">
                   <MessageReactions
                     messageId={message.id}
                     reactions={currentMessageReactions}
                     currentUsername={currentUsername}
-                    onAddReaction={onAddReaction ? (messageId, emoji) => handleAddReaction(messageId, emoji) : undefined}
-                    onRemoveReaction={onRemoveReaction ? (messageId, emoji) => handleRemoveReaction(messageId, emoji) : undefined}
+                    onAddReaction={onAddReaction ? (messageId, emoji) => handleAddReaction(messageId, emoji) : () => {}}
+                    onRemoveReaction={onRemoveReaction ? (messageId, emoji) => handleRemoveReaction(messageId, emoji) : () => {}}
                   />
                 </div>
               )}

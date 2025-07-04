@@ -10,11 +10,24 @@ import uuid
 from pathlib import Path
 import mimetypes
 import random
-from typing import Dict, List, Optional
-
+from typing import Dict, List, Optional, Any 
+from pydantic import BaseModel
 # Create uploads directory
 UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
+
+class EditMessageRequest(BaseModel):
+    message_id: str
+    new_content: str
+    room: str
+
+class DeleteMessageRequest(BaseModel):
+    message_id: str
+    room: str
+
+
+messages_storage: Dict[str, Dict[str, Any]] = {}
+rooms_storage: Dict[str, list] = {}
 
 # Create Socket.IO server with proper configuration for localhost
 sio = socketio.AsyncServer(
@@ -279,12 +292,13 @@ async def send_message(sid, data):
         return
     
     message_content = data.get('message') or data.get('content') or data.get('text', '')
-    file_info = data.get('fileInfo') or data.get('file')  # Get file info
+    file_info = data.get('fileInfo') or data.get('file')
     
-    print(f"📎 File info received: {file_info}")  # Debug log
-    
-    # Determine message type based on file info
+    # Determine message type
     message_type = 'file' if file_info else 'message'
+    
+    # Create unique message ID
+    message_id = f"{sid}_{int(datetime.now().timestamp() * 1000)}"
     
     message_data = {
         'type': message_type,
@@ -292,18 +306,130 @@ async def send_message(sid, data):
         'username': username,
         'room': room,
         'timestamp': datetime.now().isoformat(),
-        'id': f"{sid}_{int(datetime.now().timestamp() * 1000)}",
-        'userId': sid
+        'id': message_id,
+        'userId': sid,
+        'edited': False,  # Add this
+        'edited_at': None  # Add this
     }
     
     # Add file info if present
     if file_info:
         message_data['file'] = file_info
-        print(f"📎 Voice message detected: {file_info.get('filename', 'unknown')} (type: {file_info.get('file_type', 'unknown')})")
+        print(f"📎 File message: {file_info.get('filename', 'unknown')} ({file_info.get('file_type', 'unknown')})")
     
-    print(f"📤 Sending message data: {message_data}")  # Debug log
+    # Store message in memory (ADD THIS SECTION)
+    messages_storage[message_id] = message_data
+    if room not in rooms_storage:
+        rooms_storage[room] = []
+    rooms_storage[room].append(message_id)
+    
+    print(f"📤 Sending message data: {message_data}")
     await sio.emit('message', message_data, room=room)
     print(f"✅ Message sent to room {room}")
+
+@sio.event
+async def edit_message(sid, data):
+    print(f"✏️ Received edit_message from {sid}: {data}")
+    
+    if sid not in active_users:
+        await sio.emit('error', {'message': 'User not found'}, room=sid)
+        return
+    
+    user_data = active_users[sid]
+    username = user_data.get('username', 'Anonymous')
+    room = user_data.get('room')
+    
+    message_id = data.get('message_id')
+    new_content = data.get('new_content')
+    
+    if not message_id or not new_content:
+        await sio.emit('error', {'message': 'Message ID and new content are required'}, room=sid)
+        return
+    
+    # Check if message exists
+    if message_id not in messages_storage:
+        await sio.emit('error', {'message': 'Message not found'}, room=sid)
+        return
+    
+    message = messages_storage[message_id]
+    
+    # Check if user owns the message
+    if message['userId'] != sid:
+        await sio.emit('error', {'message': 'You can only edit your own messages'}, room=sid)
+        return
+    
+    # Check if message is a file message (files can't be edited, only text)
+    if message['type'] == 'file':
+        await sio.emit('error', {'message': 'File messages cannot be edited'}, room=sid)
+        return
+    
+    # Update message
+    old_content = message['content']
+    message['content'] = new_content.strip()
+    message['edited'] = True
+    message['edited_at'] = datetime.now().isoformat()
+    
+    print(f"✏️ Message edited: {old_content} -> {new_content}")
+    
+    # Emit updated message to all users in the room
+    await sio.emit('message_edited', {
+        'message_id': message_id,
+        'new_content': new_content,
+        'edited_at': message['edited_at'],
+        'room': room,
+        'username': username
+    }, room=room)
+    
+    print(f"✅ Message edit broadcasted to room {room}")
+
+@sio.event
+async def delete_message(sid, data):
+    print(f"🗑️ Received delete_message from {sid}: {data}")
+    
+    if sid not in active_users:
+        await sio.emit('error', {'message': 'User not found'}, room=sid)
+        return
+    
+    user_data = active_users[sid]
+    username = user_data.get('username', 'Anonymous')
+    room = user_data.get('room')
+    
+    message_id = data.get('message_id')
+    
+    if not message_id:
+        await sio.emit('error', {'message': 'Message ID is required'}, room=sid)
+        return
+    
+    # Check if message exists
+    if message_id not in messages_storage:
+        await sio.emit('error', {'message': 'Message not found'}, room=sid)
+        return
+    
+    message = messages_storage[message_id]
+    
+    # Check if user owns the message
+    if message['userId'] != sid:
+        await sio.emit('error', {'message': 'You can only delete your own messages'}, room=sid)
+        return
+    
+    # Delete message from storage
+    del messages_storage[message_id]
+    
+    # Remove from room storage
+    if room in rooms_storage and message_id in rooms_storage[room]:
+        rooms_storage[room].remove(message_id)
+    
+    print(f"🗑️ Message deleted: {message_id}")
+    
+    # Emit deletion to all users in the room
+    await sio.emit('message_deleted', {
+        'message_id': message_id,
+        'room': room,
+        'username': username,
+        'deleted_at': datetime.now().isoformat()
+    }, room=room)
+    
+    print(f"✅ Message deletion broadcasted to room {room}")
 
 
 @sio.event
@@ -1365,12 +1491,108 @@ async def get_stats():
         }
     }
 
+
+@app.post("/messages/edit")
+async def edit_message_rest(request: EditMessageRequest):
+    """REST endpoint for editing messages"""
+    try:
+        message_id = request.message_id
+        new_content = request.new_content
+        room = request.room
+        
+        # Check if message exists
+        if message_id not in messages_storage:
+            raise HTTPException(status_code=404, detail="Message not found")
+        
+        message = messages_storage[message_id]
+        
+        # Check if message is a file message (files can't be edited)
+        if message['type'] == 'file':
+            raise HTTPException(status_code=400, detail="File messages cannot be edited")
+        
+        # Update message
+        old_content = message['content']
+        message['content'] = new_content.strip()
+        message['edited'] = True
+        message['edited_at'] = datetime.now().isoformat()
+        
+        print(f"✏️ Message edited via REST: {old_content} -> {new_content}")
+        
+        return {
+            "success": True,
+            "message": "Message edited successfully",
+            "message_id": message_id,
+            "new_content": new_content,
+            "edited_at": message['edited_at']
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to edit message: {str(e)}")
+
+@app.post("/messages/delete")
+async def delete_message_rest(request: DeleteMessageRequest):
+    """REST endpoint for deleting messages"""
+    try:
+        message_id = request.message_id
+        room = request.room
+        
+        # Check if message exists
+        if message_id not in messages_storage:
+            raise HTTPException(status_code=404, detail="Message not found")
+        
+        # Delete message from storage
+        del messages_storage[message_id]
+        
+        # Remove from room storage
+        if room in rooms_storage and message_id in rooms_storage[room]:
+            rooms_storage[room].remove(message_id)
+        
+        print(f"🗑️ Message deleted via REST: {message_id}")
+        
+        return {
+            "success": True,
+            "message": "Message deleted successfully",
+            "message_id": message_id,
+            "deleted_at": datetime.now().isoformat()
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete message: {str(e)}")
+
+@app.get("/messages/{room_id}")
+async def get_messages(room_id: str, limit: int = 50):
+    """Get recent messages for a room"""
+    try:
+        if room_id not in rooms_storage:
+            return {"messages": []}
+        
+        # Get message IDs for the room
+        message_ids = rooms_storage[room_id][-limit:]  # Get last N messages
+        
+        # Get actual messages
+        messages = []
+        for msg_id in message_ids:
+            if msg_id in messages_storage:
+                messages.append(messages_storage[msg_id])
+        
+        return {"messages": messages}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get messages: {str(e)}")
+
 # Main entry point for localhost development
 if __name__ == "__main__":
     print("🚀 Starting Multi-Feature Chat Server for Localhost Development...")
     print("🌐 Server: http://localhost:8000")
     print("🔌 Socket.IO: ws://localhost:8000/socket.io/")
     print("📊 Stats: http://localhost:8000/stats")
+    print("📁 Upload endpoint: http://localhost:8000/upload")
+    print("✏️ Edit endpoint: http://localhost:8000/messages/edit")  # Add this
+    print("🗑️ Delete endpoint: http://localhost:8000/messages/delete")  # Add this
+    print("📨 Messages endpoint: http://localhost:8000/messages/{room_id}")
     print("🐛 Debug: http://localhost:8000/debug")
     print("🏥 Health: http://localhost:8000/health")
     print("📋 Features: Regular Rooms + Stranger Chat + Peer-to-Peer Video Calls")

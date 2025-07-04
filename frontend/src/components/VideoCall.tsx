@@ -19,11 +19,8 @@ const VideoCall: React.FC<VideoCallProps> = ({
   onEndCall, 
   onBack, 
   partnerName,
-  strangerPartner,
-  strangerRoomId,
   socket
 }) => {
-  const [stream, setStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [callAccepted, setCallAccepted] = useState(false);
   const [callEnded, setCallEnded] = useState(false);
@@ -66,17 +63,16 @@ const VideoCall: React.FC<VideoCallProps> = ({
         }
       };
 
-      const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
-      console.log('✅ Got user media:', mediaStream.getTracks().map(t => `${t.kind}: ${t.label}`));
+      const userMediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+      console.log('✅ Got user media:', userMediaStream.getTracks().map(t => `${t.kind}: ${t.label}`));
       
-      setStream(mediaStream);
-      streamRef.current = mediaStream;
+      streamRef.current = userMediaStream;
       
       if (myVideo.current) {
-        myVideo.current.srcObject = mediaStream;
+        myVideo.current.srcObject = userMediaStream;
       }
       
-      return mediaStream;
+      return userMediaStream;
       
     } catch (error) {
       console.error('❌ Error getting user media:', error);
@@ -85,7 +81,7 @@ const VideoCall: React.FC<VideoCallProps> = ({
   }, []);
 
   // Create peer with enhanced configuration
-  const createPeer = useCallback((initiator: boolean, stream: MediaStream) => {
+  const createPeer = useCallback((initiator: boolean, mediaStream: MediaStream) => {
     console.log('🔗 Creating peer connection, initiator:', initiator);
     
     // Destroy existing peer first
@@ -98,7 +94,7 @@ const VideoCall: React.FC<VideoCallProps> = ({
     const peer = new Peer({
       initiator,
       trickle: true,
-      stream,
+      stream: mediaStream,
       config: iceConfiguration,
       channelConfig: {},
       channelName: `datachannel-${roomId}`,
@@ -117,7 +113,7 @@ const VideoCall: React.FC<VideoCallProps> = ({
         console.log('📡 Sending answer');
         setConnectionStatus('Sending answer...');
         socket.emit('webrtc_answer', { answer: data });
-      } else if (data.candidate) {
+      } else if ('candidate' in data && data.candidate) {
         console.log('🧊 Sending ICE candidate');
         socket.emit('webrtc_ice_candidate', { candidate: data });
       }
@@ -128,38 +124,36 @@ const VideoCall: React.FC<VideoCallProps> = ({
       console.log('📺 Stream ID:', incomingStream.id);
       console.log('📺 Stream tracks:', incomingStream.getTracks().map(t => `${t.kind}: ${t.enabled} (${t.readyState})`));
       
+      // FIXED: Immediately set the remote stream and call accepted state
       setRemoteStream(incomingStream);
       setCallAccepted(true);
       setConnectionStatus('Connected');
       
-      // Assign stream to video element with multiple attempts
-      const assignStream = () => {
-        if (userVideo.current) {
-          console.log('📺 Assigning remote stream to video element');
-          userVideo.current.srcObject = incomingStream;
-          
-          // Force video properties
-          userVideo.current.autoplay = true;
-          userVideo.current.playsInline = true;
-          
-          // Attempt to play
-          userVideo.current.play()
-            .then(() => {
-              console.log('▶️ Remote video playing successfully');
-            })
-            .catch(e => {
-              console.warn('⚠️ Auto-play failed:', e);
-              setTimeout(() => {
-                if (userVideo.current) {
-                  userVideo.current.play().catch(console.error);
-                }
-              }, 1000);
-            });
-        }
-      };
-      
-      assignStream();
-      setTimeout(assignStream, 500);
+      // FIXED: Better video element assignment with immediate effect
+      if (userVideo.current) {
+        console.log('📺 Assigning remote stream to video element immediately');
+        userVideo.current.srcObject = incomingStream;
+        
+        // Force video properties
+        userVideo.current.autoplay = true;
+        userVideo.current.playsInline = true;
+        userVideo.current.muted = false; // Don't mute remote video
+        
+        // Force play immediately
+        userVideo.current.play()
+          .then(() => {
+            console.log('▶️ Remote video playing successfully');
+          })
+          .catch(e => {
+            console.warn('⚠️ Auto-play failed, trying again:', e);
+            // Retry after a short delay
+            setTimeout(() => {
+              if (userVideo.current) {
+                userVideo.current.play().catch(console.error);
+              }
+            }, 500);
+          });
+      }
     });
 
     peer.on('connect', () => {
@@ -246,6 +240,25 @@ const VideoCall: React.FC<VideoCallProps> = ({
     }
   }, []);
 
+  // FIXED: Effect to handle remote stream changes
+  useEffect(() => {
+    if (remoteStream && userVideo.current) {
+      console.log('📺 Setting up remote video with new stream');
+      userVideo.current.srcObject = remoteStream;
+      userVideo.current.autoplay = true;
+      userVideo.current.playsInline = true;
+      userVideo.current.muted = false;
+      
+      userVideo.current.play()
+        .then(() => {
+          console.log('▶️ Remote video started playing from effect');
+        })
+        .catch(e => {
+          console.warn('⚠️ Failed to play remote video from effect:', e);
+        });
+    }
+  }, [remoteStream]);
+
   // Initialize call
   useEffect(() => {
     const initializeCall = async () => {
@@ -253,7 +266,7 @@ const VideoCall: React.FC<VideoCallProps> = ({
         console.log('🎥 Initializing video call...');
         setConnectionStatus('Getting camera access...');
         
-        const mediaStream = await getUserMedia();
+        await getUserMedia();
         
         if (isInitiator) {
           console.log('📞 Creating offer as initiator');
@@ -385,7 +398,7 @@ const VideoCall: React.FC<VideoCallProps> = ({
 
       {/* Video Container - Full screen */}
       <div className="flex-1 relative">
-        {/* Remote Video (Main) */}
+        {/* Remote Video (Main) - FIXED */}
         <div className="w-full h-full bg-gray-900 flex items-center justify-center">
           {callAccepted && remoteStream ? (
             <video
@@ -393,13 +406,22 @@ const VideoCall: React.FC<VideoCallProps> = ({
               autoPlay
               playsInline
               controls={false}
+              muted={false}
               className="w-full h-full object-cover"
               onLoadedMetadata={() => {
                 console.log('📺 Remote video metadata loaded');
                 console.log('📺 Video dimensions:', userVideo.current?.videoWidth, 'x', userVideo.current?.videoHeight);
+                // Force play when metadata is loaded
+                if (userVideo.current) {
+                  userVideo.current.play().catch(console.error);
+                }
               }}
               onCanPlay={() => {
                 console.log('✅ Remote video can play');
+                // Force play when video can play
+                if (userVideo.current) {
+                  userVideo.current.play().catch(console.error);
+                }
               }}
               onPlay={() => {
                 console.log('▶️ Remote video started playing');
