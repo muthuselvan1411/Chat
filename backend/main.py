@@ -1584,23 +1584,40 @@ async def get_messages(room_id: str, limit: int = 50):
         return {"messages": messages}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get messages: {str(e)}")
-
-# Main entry point for localhost development
-if __name__ == "__main__":
-    print("🚀 Starting Multi-Feature Chat Server for Localhost Development...")
-    print("🌐 Server: http://localhost:8000")
-    print("🔌 Socket.IO: ws://localhost:8000/socket.io/")
-    print("📊 Stats: http://localhost:8000/stats")
-    print("📁 Upload endpoint: http://localhost:8000/upload")
-    print("✏️ Edit endpoint: http://localhost:8000/messages/edit")  # Add this
-    print("🗑️ Delete endpoint: http://localhost:8000/messages/delete")  # Add this
-    print("📨 Messages endpoint: http://localhost:8000/messages/{room_id}")
-    print("🐛 Debug: http://localhost:8000/debug")
-    print("🏥 Health: http://localhost:8000/health")
-    print("📋 Features: Regular Rooms + Stranger Chat + Peer-to-Peer Video Calls")
-    print("🔍 Debug endpoints:")
-    print("   - /debug/connections - View all stranger connections")
-    print("   - /debug/user/{socket_id} - View specific user state")
-    print("💻 Environment: Localhost Development")
     
-    uvicorn.run("main:socket_app", host="0.0.0.0", port=8000)
+
+
+# Main entry point
+if __name__ == "__main__":
+    # Get environment variables for deployment
+    HOST = os.environ.get("HOST", "0.0.0.0")
+    PORT = int(os.environ.get("PORT", 8000))
+    ENVIRONMENT = os.environ.get("RAILWAY_ENVIRONMENT", "localhost")
+    
+    print("🚀 Starting Multi-Feature Chat Server...")
+    
+    if ENVIRONMENT == "localhost":
+        print("💻 Environment: Localhost Development")
+        print(f"🌐 Server: http://localhost:{PORT}")
+        print(f"🔌 Socket.IO: ws://localhost:{PORT}/socket.io/")
+        print(f"📊 Stats: http://localhost:{PORT}/stats")
+        print(f"📁 Upload endpoint: http://localhost:{PORT}/upload")
+        print(f"✏️ Edit endpoint: http://localhost:{PORT}/messages/edit")
+        print(f"🗑️ Delete endpoint: http://localhost:{PORT}/messages/delete")
+        print(f"📨 Messages endpoint: http://localhost:{PORT}/messages/{{room_id}}")
+        print(f"🐛 Debug: http://localhost:{PORT}/debug")
+        print(f"🏥 Health: http://localhost:{PORT}/health")
+        print("🔍 Debug endpoints:")
+        print("   - /debug/connections - View all stranger connections")
+        print("   - /debug/user/{socket_id} - View specific user state")
+    else:
+        print("☁️ Environment: Railway Production")
+        print(f"🌐 Server running on port {PORT}")
+        print("🔌 Socket.IO: Ready for production connections")
+        print("📋 All endpoints available")
+        print("⚠️ Debug endpoints disabled in production")
+    
+    print("📋 Features: Regular Rooms + Stranger Chat + Peer-to-Peer Video Calls")
+    
+    # Start the server
+    uvicorn.run("main:socket_app", host=HOST, port=PORT, log_level="info")
